@@ -1,41 +1,130 @@
-# figma-make-app
+# AGENTS.md
 
-React + Vite + Tailwind CSS project running inside Figma Make.
+## Project
 
-## Development Server
+筋トレ記録アプリ．
 
-A Vite development server is **already running** on `$PORT` (default 8443). You don't need to start it manually.
+- Vite
+- React 19
+- TypeScript
+- Tailwind CSS 4
+- スマホ中心
+- 現在はUI実装段階
 
-- Preview URL: The user can access the running app through the preview panel
-- Hot reload: Changes to source files are reflected immediately
+## Goal
 
-## Project Structure
+個人またはチームで筋トレを記録する．
 
-This is the canonical project structure. Start with task-relevant files below. Only follow imports or inspect other files when required, when a documented path is missing, or when the repository contradicts this guide.
+主な利用：
+- 個人でジム
+- チームで自重トレ
+- 個人記録をチームへ共有可能
 
-- `src/main.tsx` - React entrypoint; imports `src/index.css` and mounts `src/App.tsx` into the `#root` element
-- `src/App.tsx` - Primary application component and the usual starting point for UI work
-- `src/index.css` - Global CSS entrypoint and Tailwind CSS v4 import
-- `index.html` - Vite HTML shell containing the `#root` element and loading `src/main.tsx`
-- `package.json` - Project dependencies and the Vite build, development, preview, and formatting scripts
-- `vite.config.ts` - Vite configuration with React, Tailwind CSS v4, and Figma Make plugins plus the `@` alias for `src`
-- `.mise.toml` - Toolchain versions for Node.js and pnpm
+## Development
 
-## Dependencies
+小さく作る．
+1タスクずつ進める．
 
-- Runtime: React 19 and React DOM 19
-- Styling: Tailwind CSS v4 with the `@tailwindcss/vite` plugin
-- Build tooling: Vite 8, TypeScript 5.7, and `@vitejs/plugin-react`
-- Formatting: oxfmt
+勝手に大規模変更しない．
+頼まれていない機能を追加しない．
+既存UIを不要に変更しない．
 
-## Styling
+作業前に必要なコードだけ読む．
+大量のファイルを無目的に読まない．
 
-This project uses **Tailwind CSS v4** through the `@tailwindcss/vite` plugin configured in `vite.config.ts`. `src/index.css` imports Tailwind with `@import 'tailwindcss';`. Use Tailwind utility classes directly in JSX and put global CSS or Tailwind v4 theme customization in `src/index.css`. This scaffold does not need a Tailwind config file or PostCSS config.
+## UI
 
-`src/main.tsx` imports `src/index.css`, so global font wiring belongs in `src/index.css`. Keep CSS `@import` statements first, then add any `@font-face` rules and font-family defaults there.
+既存デザインを維持する．
 
-## Code quality
+- Swiss / Minimalist
+- ダークモード
+- アシッドライムを主要操作に使用
+- モバイル幅390px前後
+- 片手操作を優先
+- 数値入力を簡単にする
+- 情報を詰め込みすぎない
 
-- Use double quotes for strings containing apostrophes (`"We're here to help"`), or escape them in single-quoted strings. An unescaped apostrophe in a single-quoted string breaks the build.
-- Ensure JSX tags are closed and braces are balanced.
-- Export components as default exports.
+避ける：
+- グラデーション
+- 過剰なカード
+- 過剰な角丸
+- 不要な影
+- 装飾目的のアイコン
+- AI生成UIっぽい装飾
+
+## Current UX
+
+ホーム：
+- 今週の回数
+- トレーニング開始
+- 前回記録
+- このメニューで開始
+- 簡易カレンダー
+- 中央の＋からクイック記録／トレーニング開始
+
+トレーニング：
+- メニューはユーザーが作成
+- メニューには種目と基本セット数を保存
+- 種目もユーザーが登録
+- 前回の重量・回数を初期値にする
+- 次セットへ前セットの重量を引き継ぐ
+- 回数は − 数字 ＋ と直接入力
+- ✓でセット完了
+- 種目はドラッグで並べ替え
+- セットは当日追加・削除可能
+
+休憩：
+- 設定でON／OFF
+- ✓で90秒開始
+- 画面下部に表示
+- −10秒／＋10秒
+
+終了：
+- 即保存しない
+- 結果確認後に保存
+- 当日追加した種目をメニューへ追加するか確認
+
+クイック記録：
+- 種目
+- 重量，任意
+- 回数
+- 共有先
+
+## Scope
+
+現在はフロントエンドUIを作る．
+
+指示があるまで追加しない：
+- DB
+- API
+- 認証
+- Prisma
+- PostgreSQL
+- AI機能
+
+## Quality
+
+変更後は最低限確認する．
+
+```bash
+npm run build
+```
+既存画面を壊さない．
+TypeScriptエラーを残さない．
+
+## Git
+
+既存変更を勝手に削除しない．
+reset，clean，checkoutで他人の変更を消さない．
+
+大きな変更は分ける．
+
+## Response
+
+報告は短くする．
+
+- 変更したもの
+- 確認結果
+- 残っていること
+
+長い説明は不要．

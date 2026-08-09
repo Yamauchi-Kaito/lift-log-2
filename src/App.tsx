@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import WorkoutScreen from "./WorkoutScreen"
+import QuickRecordScreen from "./QuickRecordScreen"
 
 const WORKSPACES = ["自宅トレ", "ジムA", "ジムB（会社近く）"]
 
@@ -144,7 +145,7 @@ function MiniCalendar() {
   )
 }
 
-function BottomSheet({ open, onClose, onStartWorkout }: { open: boolean; onClose: () => void; onStartWorkout: () => void }) {
+function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord }: { open: boolean; onClose: () => void; onStartWorkout: () => void; onQuickRecord: () => void }) {
   const [visible, setVisible] = useState(false)
   const [rendered, setRendered] = useState(false)
 
@@ -228,6 +229,7 @@ function BottomSheet({ open, onClose, onStartWorkout }: { open: boolean; onClose
 
           {/* Quick record */}
           <button
+            onClick={onQuickRecord}
             style={{
               width: "100%",
               background: "none",
@@ -419,7 +421,7 @@ function BottomSheet({ open, onClose, onStartWorkout }: { open: boolean; onClose
 type Tab = "home" | "history"
 
 export default function App() {
-  const [screen, setScreen] = useState<"home" | "workout">("home")
+  const [screen, setScreen] = useState<"home" | "workout" | "quick-record">("home")
   const [activeTab, setActiveTab] = useState<Tab>("home")
   const [wsIndex, setWsIndex] = useState(0)
   const [wsMenuOpen, setWsMenuOpen] = useState(false)
@@ -429,6 +431,9 @@ export default function App() {
 
   if (screen === "workout") {
     return <WorkoutScreen onBack={() => setScreen("home")} />
+  }
+  if (screen === "quick-record") {
+    return <QuickRecordScreen onBack={() => setScreen("home")} />
   }
 
   return (
@@ -1046,6 +1051,7 @@ export default function App() {
           open={sheetOpen}
           onClose={() => setSheetOpen(false)}
           onStartWorkout={() => { setSheetOpen(false); setScreen("workout") }}
+          onQuickRecord={() => { setSheetOpen(false); setScreen("quick-record") }}
         />
       </div>
     </div>

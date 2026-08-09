@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
+import TrainingEndScreen from "./TrainingEndScreen"
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -15,6 +16,14 @@ type Exercise = {
   prevSets: { weight: number; reps: number }[]
   sets: SetData[]
 }
+
+const ADDABLE_EXERCISES = [
+  { name: "ショルダープレス", weight: 20, reps: 10 },
+  { name: "サイドレイズ", weight: 8, reps: 12 },
+  { name: "トライセプスプレスダウン", weight: 20, reps: 12 },
+  { name: "スクワット", weight: 100, reps: 5 },
+  { name: "懸垂", weight: 0, reps: 8 },
+]
 
 // ─── Initial data (前回記録を初期値として使用) ──────────────
 
@@ -480,6 +489,7 @@ function ExerciseSection({
   onWeightChange,
   onRepsChange,
   onAddSet,
+  onSelectExercise,
 }: {
   exercise: Exercise
   nextSetGlobalId: number | null
@@ -487,7 +497,23 @@ function ExerciseSection({
   onWeightChange: (exId: number, setId: number, v: number) => void
   onRepsChange: (exId: number, setId: number, v: number) => void
   onAddSet: (exId: number) => void
+  onSelectExercise: (exId: number, name: string, weight: number, reps: number) => void
 }) {
+  if (!exercise.name) {
+    return (
+      <div style={{ margin: "12px 20px 4px", padding: "18px", border: "1px solid #c8ff00", borderRadius: 14, backgroundColor: "#171b10" }}>
+        <p style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 700, color: "#f0f0f0", marginBottom: 5 }}>追加する種目を選択</p>
+        <p style={{ color: "#777", fontSize: 12, marginBottom: 14 }}>選択するとセット入力を開始できます</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {ADDABLE_EXERCISES.map((option) => (
+            <button key={option.name} onClick={() => onSelectExercise(exercise.id, option.name, option.weight, option.reps)} style={{ padding: "9px 11px", borderRadius: 8, backgroundColor: "#202020", border: "1px solid #333", color: "#ddd", fontFamily: "Inter", fontSize: 12, cursor: "pointer" }}>
+              {option.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
   return (
     <div style={{ marginBottom: 4 }}>
       {/* Exercise header */}
@@ -635,6 +661,7 @@ export default function WorkoutScreen({ onBack }: { onBack: () => void }) {
   const [elapsed, setElapsed] = useState(0)
   const [restActive, setRestActive] = useState(false)
   const [restSeconds, setRestSeconds] = useState(90)
+  const [ending, setEnding] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Elapsed timer
@@ -730,14 +757,27 @@ export default function WorkoutScreen({ onBack }: { onBack: () => void }) {
   const addExercise = () => {
     const newEx: Exercise = {
       id: ++_exId,
-      name: "新しい種目",
+      name: "",
       prevSets: [],
       sets: [{ id: ++_setId, weight: 0, reps: 0, completed: false }],
     }
     setExercises((prev) => [...prev, newEx])
   }
 
+  const selectExercise = useCallback((exId: number, name: string, weight: number, reps: number) => {
+    setExercises((prev) => prev.map((exercise) => exercise.id === exId ? {
+      ...exercise,
+      name,
+      prevSets: [],
+      sets: exercise.sets.map((set) => ({ ...set, weight, reps })),
+    } : exercise))
+  }, [])
+
   const restPadding = restActive ? 130 : 0
+
+  if (ending) {
+    return <TrainingEndScreen exercises={exercises} elapsed={elapsed} onReturn={() => setEnding(false)} onSave={onBack} />
+  }
 
   return (
     <div
@@ -833,6 +873,7 @@ export default function WorkoutScreen({ onBack }: { onBack: () => void }) {
 
           {/* End button */}
           <button
+            onClick={() => { setRestActive(false); setEnding(true) }}
             style={{
               padding: "7px 14px",
               backgroundColor: "transparent",
@@ -869,6 +910,7 @@ export default function WorkoutScreen({ onBack }: { onBack: () => void }) {
               onWeightChange={updateWeight}
               onRepsChange={updateReps}
               onAddSet={addSet}
+              onSelectExercise={selectExercise}
             />
           ))}
 
