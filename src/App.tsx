@@ -2,6 +2,8 @@ import { useState, useEffect } from "react"
 import WorkoutScreen from "./WorkoutScreen"
 import QuickRecordScreen from "./QuickRecordScreen"
 import HistoryScreen from "./HistoryScreen"
+import MenuEditorScreen from "./MenuEditorScreen"
+import SettingsScreen from "./SettingsScreen"
 
 const WORKSPACES = ["自宅トレ", "ジムA", "ジムB（会社近く）"]
 
@@ -413,6 +415,7 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord }: { open: b
               </div>
             </div>
           </button>
+
         </div>
       </div>
     </>
@@ -422,7 +425,7 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord }: { open: b
 type Tab = "home" | "history"
 
 export default function App() {
-  const [screen, setScreen] = useState<"home" | "workout" | "quick-record">("home")
+  const [screen, setScreen] = useState<"home" | "workout" | "quick-record" | "history" | "menu-editor" | "settings">("home")
   const [activeTab, setActiveTab] = useState<Tab>("home")
   const [wsIndex, setWsIndex] = useState(0)
   const [wsMenuOpen, setWsMenuOpen] = useState(false)
@@ -437,7 +440,13 @@ export default function App() {
     return <QuickRecordScreen onBack={() => setScreen("home")} />
   }
   if (screen === "history") {
-    return <HistoryScreen onHome={() => { setActiveTab("home"); setScreen("home") }} onQuick={() => setScreen("quick-record")} />
+    return <HistoryScreen onHome={() => { setActiveTab("home"); setScreen("home") }} onQuick={() => setScreen("quick-record")} onSettings={() => setScreen("settings")} />
+  }
+  if (screen === "menu-editor") {
+    return <MenuEditorScreen onBack={() => setScreen("home")} />
+  }
+  if (screen === "settings") {
+    return <SettingsScreen onHome={() => setScreen("home")} onQuick={() => setScreen("quick-record")} onHistory={() => setScreen("history")} onMenuEditor={() => setScreen("menu-editor")} />
   }
 
   return (
@@ -673,6 +682,7 @@ export default function App() {
               </p>
             </div>
           </div>
+
 
           {/* ─── Start button ─── */}
           <div style={{ padding: "0 24px 28px" }}>
@@ -1047,6 +1057,11 @@ export default function App() {
             >
               履歴
             </span>
+          </button>
+
+          <button onClick={() => setScreen("settings")} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: "#505050", padding: "6px 0" }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1-2.2 2.2-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5v.2h-3.2v-.2a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.9.3l-.1.1-2.2-2.2.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H5v-3.2h.2a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1 2.2-2.2.1.1a1.7 1.7 0 001.9.3 1.7 1.7 0 001-1.5V4h3.2v.2a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1 2.2 2.2-.1.1a1.7 1.7 0 00-.3 1.9 1.7 1.7 0 001.5 1h.2V14h-.2a1.7 1.7 0 00-1.5 1z" /></svg>
+            <span style={{ fontFamily: "Inter", fontSize: 10, letterSpacing: "0.04em" }}>設定</span>
           </button>
         </div>
 

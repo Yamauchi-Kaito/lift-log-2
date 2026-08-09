@@ -1,3 +1,5 @@
+import { useState } from "react"
+
 type SetData = { id: number; weight: number; reps: number; completed: boolean }
 type Exercise = { id: number; name: string; prevSets: { weight: number; reps: number }[]; sets: SetData[] }
 
@@ -13,6 +15,7 @@ export default function TrainingEndScreen({ exercises, elapsed, onReturn, onSave
   const completedSets = completedExercises.reduce((total, exercise) => total + exercise.sets.filter((set) => set.completed).length, 0)
   const addedExercises = exercises.filter((exercise) => exercise.id > 3)
   const [addToMenu, setAddToMenu] = useState<Record<number, boolean>>(() => Object.fromEntries(addedExercises.map((exercise) => [exercise.id, true])))
+  const [note, setNote] = useState("")
 
   return <main style={pageStyle}><div style={contentStyle}>
     <header style={{ padding: "28px 24px 20px", borderBottom: "1px solid #1e1e1e" }}>
@@ -30,13 +33,14 @@ export default function TrainingEndScreen({ exercises, elapsed, onReturn, onSave
       </section>
       <p style={sectionLabel}>実績</p>
       {completedExercises.length === 0 ? <div style={{ ...cardStyle, color: "#777", fontSize: 14 }}>完了したセットはありません</div> : <section style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>{completedExercises.map((exercise, index) => <div key={exercise.id} style={{ padding: "16px 18px", borderBottom: index < completedExercises.length - 1 ? "1px solid #242424" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 16, fontWeight: 600, marginBottom: 9 }}>{exercise.name}</p><div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{exercise.sets.filter((set) => set.completed).map((set, setIndex) => <span key={set.id} style={{ backgroundColor: "#202020", border: "1px solid #303030", borderRadius: 7, padding: "5px 8px", color: "#ccc", fontFamily: "Outfit", fontSize: 12 }}>SET {setIndex + 1}　{set.weight > 0 ? `${set.weight}kg × ` : ""}{set.reps}回</span>)}</div></div>)}</section>}
+      <p style={sectionLabel}>メモ <span style={{ color: "#555", fontWeight: 400 }}>任意</span></p>
+      <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="今日のトレーニングのメモを入力" style={{ width: "100%", minHeight: 86, padding: "13px 14px", resize: "vertical", backgroundColor: "#171717", border: "1px solid #2a2a2a", borderRadius: 13, color: "#ddd", outline: "none", fontFamily: "Inter", fontSize: 14, lineHeight: 1.5 }} />
       {addedExercises.length > 0 && <><p style={sectionLabel}>メニューへ追加</p><section style={cardStyle}>{addedExercises.map((exercise, index) => <div key={exercise.id} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: index < addedExercises.length - 1 ? 16 : 0, marginBottom: index < addedExercises.length - 1 ? 16 : 0, borderBottom: index < addedExercises.length - 1 ? "1px solid #242424" : "none" }}><div style={{ flex: 1 }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{exercise.name}</p><p style={{ color: "#777", fontSize: 12 }}>この種目を「胸トレ」に追加しますか？</p></div><div style={{ display: "flex", border: "1px solid #333", borderRadius: 8, overflow: "hidden" }}><button onClick={() => setAddToMenu((value) => ({ ...value, [exercise.id]: true }))} style={choiceStyle(addToMenu[exercise.id])}>追加する</button><button onClick={() => setAddToMenu((value) => ({ ...value, [exercise.id]: false }))} style={choiceStyle(!addToMenu[exercise.id])}>しない</button></div></div>)}</section></>}
     </div>
     <footer style={{ position: "absolute", bottom: 0, width: "100%", display: "flex", gap: 10, padding: "14px 24px 28px", backgroundColor: "#0d0d0d", borderTop: "1px solid #1e1e1e" }}><button onClick={onReturn} style={{ ...buttonStyle, flex: 1, backgroundColor: "#202020", border: "1px solid #333", color: "#ddd" }}>トレーニングに戻る</button><button onClick={onSave} style={{ ...buttonStyle, flex: 1.15 }}>保存して終了</button></footer>
   </div></main>
 }
 
-import { useState } from "react"
 function Metric({ label, value }: { label: string; value: string }) { return <div><p style={{ color: "#777", fontSize: 10, marginBottom: 5 }}>{label}</p><p style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 700, whiteSpace: "nowrap" }}>{value}</p></div> }
 const pageStyle = { minHeight: "100vh", display: "flex", justifyContent: "center", backgroundColor: "#000" } as const
 const contentStyle = { position: "relative", width: "100%", maxWidth: 430, minHeight: "100vh", backgroundColor: "#0d0d0d" } as const
