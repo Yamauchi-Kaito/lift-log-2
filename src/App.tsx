@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import WorkoutScreen from "./WorkoutScreen"
 import QuickRecordScreen from "./QuickRecordScreen"
+import HistoryScreen from "./HistoryScreen"
 
 const WORKSPACES = ["自宅トレ", "ジムA", "ジムB（会社近く）"]
 
@@ -434,6 +435,9 @@ export default function App() {
   }
   if (screen === "quick-record") {
     return <QuickRecordScreen onBack={() => setScreen("home")} />
+  }
+  if (screen === "history") {
+    return <HistoryScreen onHome={() => { setActiveTab("home"); setScreen("home") }} onQuick={() => setScreen("quick-record")} />
   }
 
   return (
@@ -1005,7 +1009,7 @@ export default function App() {
 
           {/* 履歴 */}
           <button
-            onClick={() => setActiveTab("history")}
+            onClick={() => { setActiveTab("history"); setScreen("history") }}
             style={{
               flex: 1,
               display: "flex",
