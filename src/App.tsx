@@ -499,6 +499,8 @@ export default function App() {
   const [sharedRecords, setSharedRecords] = useState<SharedRecord[]>([])
   const [teamCreating, setTeamCreating] = useState(false)
   const [teamCreateError, setTeamCreateError] = useState<string | null>(null)
+  const [teamRoleSaving, setTeamRoleSaving] = useState(false)
+  const [teamRoleError, setTeamRoleError] = useState<string | null>(null)
 
   const loadMenus = useCallback(async () => {
     if (!user) {
@@ -826,35 +828,32 @@ export default function App() {
     return () => { active = false }
   }, [user?.id, workspaces])
 
-  useEffect(() => {
-    let active = true
+  const loadTeamMembers = useCallback(async () => {
     const current = workspaces[wsIndex]
     if (!user || !current || current.type !== "チーム") {
       setTeamMembers([])
-      return () => { active = false }
+      return
     }
 
-    const loadTeamMembers = async () => {
-      const { data, error } = await supabase
-        .from("workspace_members")
-        .select("user_id, system_role")
-        .eq("workspace_id", current.id)
-        .is("left_at", null)
-      if (error) throw error
+    const { data, error } = await supabase
+      .from("workspace_members")
+      .select("user_id, system_role")
+      .eq("workspace_id", current.id)
+      .is("left_at", null)
+    if (error) throw error
 
-      if (!active) return
-      setTeamMembers((data ?? []).map((member) => ({
-        id: member.user_id,
-        name: member.user_id === user.id ? "自分" : "メンバー",
-        systemRole: member.system_role === "owner" ? "Owner" : member.system_role === "admin" ? "Admin" : "Member",
-        weeklyCount: sharedRecords.filter((record) => record.teamId === current.id && record.memberId === member.user_id).length,
-        recent: "",
-      } satisfies TeamMember)))
-    }
+    setTeamMembers((data ?? []).map((member) => ({
+      id: member.user_id,
+      name: member.user_id === user.id ? "自分" : "メンバー",
+      systemRole: member.system_role === "owner" ? "Owner" : member.system_role === "admin" ? "Admin" : "Member",
+      weeklyCount: sharedRecords.filter((record) => record.teamId === current.id && record.memberId === member.user_id).length,
+      recent: "",
+    } satisfies TeamMember)))
+  }, [user, workspaces, wsIndex, sharedRecords])
 
+  useEffect(() => {
     void loadTeamMembers().catch((error) => console.error("Team member load failed:", error))
-    return () => { active = false }
-  }, [user?.id, workspaces, wsIndex, sharedRecords])
+  }, [loadTeamMembers])
 
   useEffect(() => {
     let active = true
@@ -1397,7 +1396,32 @@ export default function App() {
   if (screen === "team-member" && selectedMember) {
     return <TeamMemberScreen member={selectedMember} records={sharedRecords.filter((record) => record.teamId === selectedTeamId)} onBack={() => setScreen("home")} />
   }
-  if (screen === "team-manage") return <TeamManageScreen teamName={currentTeamWorkspace?.name ?? "チーム"} members={teamMembers} records={sharedRecords.filter((record) => record.teamId === currentTeamWorkspace?.id)} currentRole="Owner" onBack={() => setScreen("workspace-manager")} onRoleChange={(id, systemRole) => setTeamMembers((current) => current.map((member) => member.id === id ? { ...member, systemRole } : member))} onRemoveRecord={(id) => setSharedRecords((current) => current.filter((record) => record.id !== id))} />
+  if (screen === "team-manage") return <TeamManageScreen teamName={currentTeamWorkspace?.name ?? "チーム"} members={teamMembers} records={sharedRecords.filter((record) => record.teamId === currentTeamWorkspace?.id)} currentRole={currentTeamWorkspace?.systemRole === "owner" ? "Owner" : currentTeamWorkspace?.systemRole === "admin" ? "Admin" : "Member"} saving={teamRoleSaving} error={teamRoleError} onBack={() => { setTeamRoleError(null); setScreen("workspace-manager") }} onRoleChange={async (id, systemRole) => {
+    if (!currentTeamWorkspace) return false
+    setTeamRoleSaving(true)
+    setTeamRoleError(null)
+    const { error } = await supabase.rpc("update_team_member_role", {
+      target_workspace_id: currentTeamWorkspace.id,
+      target_user_id: id,
+      new_role: systemRole.toLowerCase(),
+    })
+    if (error) {
+      console.error("Team member role update failed:", error)
+      setTeamRoleSaving(false)
+      setTeamRoleError("権限を変更できませんでした。もう一度お試しください。")
+      return false
+    }
+    try {
+      await loadTeamMembers()
+      setTeamRoleSaving(false)
+      return true
+    } catch (loadError) {
+      console.error("Team member reload failed:", loadError)
+      setTeamRoleSaving(false)
+      setTeamRoleError("権限は変更しましたが、メンバー一覧を更新できませんでした。再度開き直してください。")
+      return false
+    }
+  }} onRemoveRecord={(id) => setSharedRecords((current) => current.filter((record) => record.id !== id))} />
   if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setWsIndex(workspaces.findIndex((workspace) => workspace.id === id)); setScreen("home") }} onRename={(id, name) => setWorkspaces((current) => current.map((workspace) => workspace.id === id ? { ...workspace, name } : workspace))} onExit={(id) => { setWorkspaces((current) => current.filter((workspace) => workspace.id !== id)); setWsIndex(0) }} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setWsIndex(workspaces.findIndex((workspace) => workspace.id === id)); setScreen("team-manage") }} />
   if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} onBack={() => setScreen("home")} onSave={(photo) => setGrowthPhotos((current) => [photo, ...current])} onUpdate={(photo) => setGrowthPhotos((current) => current.map((item) => item.id === photo.id ? { ...photo, teamId: photo.visibility === "チームに共有" ? currentTeamWorkspace?.id : photo.teamId } : item))} onDelete={(id) => setGrowthPhotos((current) => current.filter((photo) => photo.id !== id))} />
   if (screen === "settings") {
