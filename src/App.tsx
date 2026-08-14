@@ -43,6 +43,18 @@ const TRAINING_DAYS = new Set([1, 5, 7, 12, 14, 19, 21, 26])
 const TODAY = 9
 const filterChipStyle = { flexShrink: 0, padding: "7px 11px", border: "1px solid", borderRadius: 15, background: "#202020", fontFamily: "Inter", fontSize: 11, cursor: "pointer" } as const
 
+function createStorageObjectId() {
+  const cryptoApi = globalThis.crypto
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID()
+
+  const bytes = new Uint8Array(16)
+  if (typeof cryptoApi?.getRandomValues === "function") cryptoApi.getRandomValues(bytes)
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("").replace(/(.{8})(.{4})(.{4})(.{4})/, "$1-$2-$3-$4-")
+}
+
 function WeekProgress({ done, target }: { done: number; target: number }) {
   return (
     <div className="flex items-center gap-4">
@@ -1064,7 +1076,7 @@ export default function App() {
 
     setGrowthPhotoSaving(true)
     setGrowthPhotoError(null)
-    const storagePath = `${user.id}/${crypto.randomUUID()}.${extension}`
+    const storagePath = `${user.id}/${createStorageObjectId()}.${extension}`
     const { error: uploadError } = await supabase.storage
       .from("body-photos")
       .upload(storagePath, draft.file, { contentType: draft.file.type, upsert: false })
