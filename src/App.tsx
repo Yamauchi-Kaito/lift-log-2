@@ -16,12 +16,14 @@ import TeamCreateScreen from "./TeamCreateScreen"
 import OnboardingScreen from "./OnboardingScreen"
 import WorkspaceManagerScreen from "./WorkspaceManagerScreen"
 import TeamManageScreen from "./TeamManageScreen"
+import type { TeamInvitation } from "./TeamManageScreen"
 import GrowthScreen from "./GrowthScreen"
 import type { GrowthPhoto } from "./GrowthScreen"
 import TeamMemberScreen from "./TeamMemberScreen"
 import type { TeamMember, SharedRecord } from "./TeamMemberScreen"
 import type { ExerciseId, RegisteredExercise, TrainingMenu } from "./MenuEditorScreen"
 import SettingsScreen from "./SettingsScreen"
+import type { IncomingInvitation } from "./SettingsScreen"
 import type { PersonalWorkspace, TeamWorkspace, Workspace } from "./workspace"
 
 const INITIAL_WORKSPACES: Workspace[] = []
@@ -446,6 +448,14 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord }: { open: b
 
 type Tab = "home" | "history"
 
+function invitationErrorMessage(error: { message?: string } | null, fallback: string) {
+  const message = error?.message?.toLowerCase() ?? ""
+  if (message.includes("expired")) return "招待の期限が切れています。"
+  if (message.includes("revoked")) return "招待は取り消されています。"
+  if (message.includes("already accepted")) return "招待はすでに承認されています。"
+  return fallback
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
@@ -501,6 +511,12 @@ export default function App() {
   const [teamCreateError, setTeamCreateError] = useState<string | null>(null)
   const [teamRoleSaving, setTeamRoleSaving] = useState(false)
   const [teamRoleError, setTeamRoleError] = useState<string | null>(null)
+  const [teamInvitations, setTeamInvitations] = useState<TeamInvitation[]>([])
+  const [teamInvitationSaving, setTeamInvitationSaving] = useState(false)
+  const [teamInvitationError, setTeamInvitationError] = useState<string | null>(null)
+  const [incomingInvitations, setIncomingInvitations] = useState<IncomingInvitation[]>([])
+  const [acceptingInvitationId, setAcceptingInvitationId] = useState<string | null>(null)
+  const [incomingInvitationError, setIncomingInvitationError] = useState<string | null>(null)
 
   const loadMenus = useCallback(async () => {
     if (!user) {
@@ -854,6 +870,58 @@ export default function App() {
   useEffect(() => {
     void loadTeamMembers().catch((error) => console.error("Team member load failed:", error))
   }, [loadTeamMembers])
+
+  const loadTeamInvitations = useCallback(async () => {
+    const current = workspaces[wsIndex]
+    if (!user || !current || current.type !== "チーム") {
+      setTeamInvitations([])
+      return
+    }
+
+    const { data, error } = await supabase
+      .from("workspace_invitations")
+      .select("id, workspace_id, invited_email, created_at, expires_at, accepted_at, revoked_at")
+      .eq("workspace_id", current.id)
+      .order("created_at", { ascending: false })
+    if (error) throw error
+
+    setTeamInvitations((data ?? []).map((invitation) => ({
+      id: invitation.id,
+      workspaceId: invitation.workspace_id,
+      email: invitation.invited_email,
+      createdAt: invitation.created_at,
+      expiresAt: invitation.expires_at,
+      acceptedAt: invitation.accepted_at,
+      revokedAt: invitation.revoked_at,
+    } satisfies TeamInvitation)))
+  }, [user, workspaces, wsIndex])
+
+  useEffect(() => {
+    void loadTeamInvitations().catch((error) => console.error("Team invitation load failed:", error))
+  }, [loadTeamInvitations])
+
+  const loadIncomingInvitations = useCallback(async () => {
+    if (!user) {
+      setIncomingInvitations([])
+      return
+    }
+
+    const { data, error } = await supabase
+      .from("workspace_invitations")
+      .select("id, expires_at, workspaces(name)")
+      .order("created_at", { ascending: false })
+    if (error) throw error
+
+    type IncomingInvitationRow = { id: string; expires_at: string; workspaces: { name: string } | { name: string }[] | null }
+    setIncomingInvitations(((data ?? []) as IncomingInvitationRow[]).flatMap((invitation) => {
+      const workspace = Array.isArray(invitation.workspaces) ? invitation.workspaces[0] : invitation.workspaces
+      return workspace ? [{ id: invitation.id, workspaceName: workspace.name, expiresAt: invitation.expires_at } satisfies IncomingInvitation] : []
+    }))
+  }, [user])
+
+  useEffect(() => {
+    void loadIncomingInvitations().catch((error) => console.error("Incoming invitation load failed:", error))
+  }, [loadIncomingInvitations])
 
   useEffect(() => {
     let active = true
@@ -1396,7 +1464,7 @@ export default function App() {
   if (screen === "team-member" && selectedMember) {
     return <TeamMemberScreen member={selectedMember} records={sharedRecords.filter((record) => record.teamId === selectedTeamId)} onBack={() => setScreen("home")} />
   }
-  if (screen === "team-manage") return <TeamManageScreen teamName={currentTeamWorkspace?.name ?? "チーム"} members={teamMembers} records={sharedRecords.filter((record) => record.teamId === currentTeamWorkspace?.id)} currentRole={currentTeamWorkspace?.systemRole === "owner" ? "Owner" : currentTeamWorkspace?.systemRole === "admin" ? "Admin" : "Member"} saving={teamRoleSaving} error={teamRoleError} onBack={() => { setTeamRoleError(null); setScreen("workspace-manager") }} onRoleChange={async (id, systemRole) => {
+  if (screen === "team-manage") return <TeamManageScreen teamName={currentTeamWorkspace?.name ?? "チーム"} members={teamMembers} records={sharedRecords.filter((record) => record.teamId === currentTeamWorkspace?.id)} invitations={teamInvitations} currentRole={currentTeamWorkspace?.systemRole === "owner" ? "Owner" : currentTeamWorkspace?.systemRole === "admin" ? "Admin" : "Member"} saving={teamRoleSaving} error={teamRoleError} invitationSaving={teamInvitationSaving} invitationError={teamInvitationError} onBack={() => { setTeamRoleError(null); setTeamInvitationError(null); setScreen("workspace-manager") }} onRoleChange={async (id, systemRole) => {
     if (!currentTeamWorkspace) return false
     setTeamRoleSaving(true)
     setTeamRoleError(null)
@@ -1421,11 +1489,78 @@ export default function App() {
       setTeamRoleError("権限は変更しましたが、メンバー一覧を更新できませんでした。再度開き直してください。")
       return false
     }
+  }} onCreateInvitation={async (email) => {
+    if (!currentTeamWorkspace) return false
+    setTeamInvitationSaving(true)
+    setTeamInvitationError(null)
+    const { error } = await supabase.rpc("create_team_invitation", {
+      target_workspace_id: currentTeamWorkspace.id,
+      invitee_email: email,
+    })
+    if (error) {
+      console.error("Team invitation create failed:", error)
+      setTeamInvitationSaving(false)
+      setTeamInvitationError(invitationErrorMessage(error, "招待を作成できませんでした。メールアドレスを確認してください。"))
+      return false
+    }
+    try {
+      await loadTeamInvitations()
+      setTeamInvitationSaving(false)
+      return true
+    } catch (loadError) {
+      console.error("Team invitation reload failed:", loadError)
+      setTeamInvitationSaving(false)
+      setTeamInvitationError("招待は作成しましたが、一覧を更新できませんでした。")
+      return false
+    }
+  }} onRevokeInvitation={async (id) => {
+    setTeamInvitationSaving(true)
+    setTeamInvitationError(null)
+    const { error } = await supabase.rpc("revoke_team_invitation", { invitation_id: id })
+    if (error) {
+      console.error("Team invitation revoke failed:", error)
+      setTeamInvitationSaving(false)
+      setTeamInvitationError(invitationErrorMessage(error, "招待を取り消せませんでした。"))
+      return false
+    }
+    try {
+      await loadTeamInvitations()
+      setTeamInvitationSaving(false)
+      return true
+    } catch (loadError) {
+      console.error("Team invitation reload failed:", loadError)
+      setTeamInvitationSaving(false)
+      setTeamInvitationError("招待は取り消しましたが、一覧を更新できませんでした。")
+      return false
+    }
   }} onRemoveRecord={(id) => setSharedRecords((current) => current.filter((record) => record.id !== id))} />
   if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setWsIndex(workspaces.findIndex((workspace) => workspace.id === id)); setScreen("home") }} onRename={(id, name) => setWorkspaces((current) => current.map((workspace) => workspace.id === id ? { ...workspace, name } : workspace))} onExit={(id) => { setWorkspaces((current) => current.filter((workspace) => workspace.id !== id)); setWsIndex(0) }} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setWsIndex(workspaces.findIndex((workspace) => workspace.id === id)); setScreen("team-manage") }} />
   if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} onBack={() => setScreen("home")} onSave={(photo) => setGrowthPhotos((current) => [photo, ...current])} onUpdate={(photo) => setGrowthPhotos((current) => current.map((item) => item.id === photo.id ? { ...photo, teamId: photo.visibility === "チームに共有" ? currentTeamWorkspace?.id : photo.teamId } : item))} onDelete={(id) => setGrowthPhotos((current) => current.filter((photo) => photo.id !== id))} />
   if (screen === "settings") {
-    return <SettingsScreen onHome={() => setScreen("home")} onQuick={() => setScreen("quick-record")} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onCreateTeam={() => setScreen("team-create")} onWorkspaceManager={() => setScreen("workspace-manager")} tendency={trainingTendency} onTendency={setTrainingTendency} workspaces={workspaces} currentWorkspaceId={currentWorkspace.id} onSelectWorkspace={(id) => setWsIndex(workspaces.findIndex((workspace) => workspace.id === id))} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} user={user} onSignOut={signOut} />
+    return <SettingsScreen onHome={() => setScreen("home")} onQuick={() => setScreen("quick-record")} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onCreateTeam={() => setScreen("team-create")} onWorkspaceManager={() => setScreen("workspace-manager")} tendency={trainingTendency} onTendency={setTrainingTendency} workspaces={workspaces} currentWorkspaceId={currentWorkspace.id} onSelectWorkspace={(id) => setWsIndex(workspaces.findIndex((workspace) => workspace.id === id))} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} onAcceptInvitation={async (id) => {
+      setAcceptingInvitationId(id)
+      setIncomingInvitationError(null)
+      const { error } = await supabase.rpc("accept_team_invitation", { invitation_id: id })
+      if (error) {
+        console.error("Team invitation accept failed:", error)
+        setAcceptingInvitationId(null)
+        setIncomingInvitationError(invitationErrorMessage(error, "招待を承認できませんでした。"))
+        await loadIncomingInvitations().catch((loadError) => console.error("Incoming invitation reload failed:", loadError))
+        return false
+      }
+      try {
+        await loadIncomingInvitations()
+        setWorkspaceRefresh((value) => value + 1)
+        setAcceptingInvitationId(null)
+        return true
+      } catch (loadError) {
+        console.error("Incoming invitation reload failed:", loadError)
+        setAcceptingInvitationId(null)
+        setIncomingInvitationError("招待は承認しましたが、招待一覧を更新できませんでした。")
+        setWorkspaceRefresh((value) => value + 1)
+        return false
+      }
+    }} user={user} onSignOut={signOut} />
   }
 
   const isTeamWorkspace = currentWorkspace.type === "チーム"
