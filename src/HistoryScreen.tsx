@@ -1,30 +1,28 @@
 import { useState } from "react"
 
-type RecordItem = { id: number; date: string; day: number; title: string; result: string; sets: string; duration: string; share: string; quick?: boolean }
+export type HistoryRecord = { id: number; date: string; day: number; title: string; result: string; sets: string; duration: string; share: string; quick?: boolean }
 
-const RECORDS: RecordItem[] = [
+export const INITIAL_HISTORY_RECORDS: HistoryRecord[] = [
   { id: 1, date: "8月9日（土）", day: 9, title: "胸トレ", result: "80kg × 8回", sets: "3種目 · 9セット", duration: "52分", share: "自分のみ" },
   { id: 2, date: "8月9日（土）", day: 9, title: "腕立て伏せ", result: "30回", sets: "1セット", duration: "—", share: "チーム · 自宅トレ", quick: true },
   { id: 3, date: "8月7日（木）", day: 7, title: "胸トレ", result: "80kg × 8回", sets: "3種目 · 9セット", duration: "52分", share: "自分のみ" },
   { id: 4, date: "8月5日（火）", day: 5, title: "スクワット", result: "100kg × 5回", sets: "3セット", duration: "18分", share: "チーム · ジムA", quick: true },
   { id: 5, date: "8月1日（金）", day: 1, title: "下半身トレ", result: "100kg × 5回", sets: "4種目 · 12セット", duration: "64分", share: "自分のみ" },
 ]
-const TRAINING_DAYS = new Set(RECORDS.map((record) => record.day))
-
-export default function HistoryScreen({ onHome, onQuick, onSettings }: { onHome: () => void; onQuick: () => void; onSettings: () => void }) {
+export default function HistoryScreen({ onHome, onQuick, onSettings, onGrowth, records, onDelete }: { onHome: () => void; onQuick: () => void; onSettings: () => void; onGrowth: () => void; records: HistoryRecord[]; onDelete: (id: number) => void }) {
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
-  const [detail, setDetail] = useState<RecordItem | null>(null)
-  const [records, setRecords] = useState(RECORDS)
+  const [detail, setDetail] = useState<HistoryRecord | null>(null)
+  const trainingDays = new Set(records.map((record) => record.day))
   const visible = selectedDay ? records.filter((record) => record.day === selectedDay) : records
-  if (detail) return <HistoryDetail record={detail} onBack={() => setDetail(null)} onHome={onHome} onQuick={onQuick} onSettings={onSettings} onDelete={(id) => setRecords((items) => items.filter((item) => item.id !== id))} />
+  if (detail) return <HistoryDetail record={detail} onBack={() => setDetail(null)} onHome={onHome} onQuick={onQuick} onSettings={onSettings} onDelete={onDelete} />
 
   return <main style={pageStyle}><div style={contentStyle}>
     <div style={{ flex: 1, overflowY: "auto", paddingBottom: 92 }}>
-      <header style={{ padding: "48px 24px 22px" }}><p style={eyebrowStyle}>PERSONAL HISTORY</p><h1 style={{ fontFamily: "Outfit", fontSize: 25, fontWeight: 700 }}>履歴</h1></header>
+      <header style={{ padding: "48px 24px 22px" }}><p style={eyebrowStyle}>PERSONAL HISTORY</p><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><h1 style={{ fontFamily: "Outfit", fontSize: 25, fontWeight: 700 }}>履歴</h1><button onClick={onGrowth} style={{ padding: "8px 10px", border: "1px solid #3e4d00", borderRadius: 8, background: "#1b2500", color: "#c8ff00", fontFamily: "Inter", fontSize: 11, cursor: "pointer" }}>写真の成長記録</button></div></header>
       <section style={{ margin: "0 24px", padding: "17px 16px 13px", backgroundColor: "#171717", border: "1px solid #2a2a2a", borderRadius: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600 }}>2026年8月</p>{selectedDay && <button onClick={() => setSelectedDay(null)} style={{ background: "none", border: "none", color: "#c8ff00", fontFamily: "Inter", fontSize: 11, cursor: "pointer" }}>すべて表示</button>}</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 7 }}>{["日", "月", "火", "水", "木", "金", "土"].map((day, index) => <span key={day} style={{ textAlign: "center", color: index === 0 ? "#b35b5b" : index === 6 ? "#5b82b3" : "#666", fontSize: 10 }}>{day}</span>)}</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "3px 0" }}>{Array.from({ length: 35 }, (_, index) => { const date = index - 6; if (date < 1 || date > 31) return <div key={index} />; const trained = TRAINING_DAYS.has(date); const selected = selectedDay === date; return <button key={date} onClick={() => setSelectedDay(selected ? null : date)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 0", border: "none", background: "transparent", color: selected ? "#0d0d0d" : trained ? "#ddd" : "#666", cursor: "pointer" }}><span style={{ width: 23, height: 23, display: "grid", placeItems: "center", borderRadius: "50%", backgroundColor: selected ? "#c8ff00" : "transparent", fontFamily: "Outfit", fontSize: 12, fontWeight: selected ? 700 : 400 }}>{date}</span><i style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: trained ? "#c8ff00" : "transparent" }} /></button> })}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "3px 0" }}>{Array.from({ length: 35 }, (_, index) => { const date = index - 6; if (date < 1 || date > 31) return <div key={index} />; const trained = trainingDays.has(date); const selected = selectedDay === date; return <button key={date} onClick={() => setSelectedDay(selected ? null : date)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 0", border: "none", background: "transparent", color: selected ? "#0d0d0d" : trained ? "#ddd" : "#666", cursor: "pointer" }}><span style={{ width: 23, height: 23, display: "grid", placeItems: "center", borderRadius: "50%", backgroundColor: selected ? "#c8ff00" : "transparent", fontFamily: "Outfit", fontSize: 12, fontWeight: selected ? 700 : 400 }}>{date}</span><i style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: trained ? "#c8ff00" : "transparent" }} /></button> })}</div>
       </section>
       <section style={{ padding: "28px 24px 0" }}><p style={eyebrowStyle}>{selectedDay ? `8月${selectedDay}日の記録` : "すべての記録"}</p>{visible.length === 0 ? <p style={{ color: "#777", fontSize: 14, padding: "28px 0", textAlign: "center" }}>この日の記録はありません</p> : <div>{visible.map((record, index) => <div key={record.id}>{(index === 0 || visible[index - 1].date !== record.date) && <p style={{ fontFamily: "Outfit", color: "#aaa", fontSize: 14, fontWeight: 600, margin: index ? "24px 0 10px" : "0 0 10px" }}>{record.date}</p>}<button onClick={() => setDetail(record)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "15px", backgroundColor: "#171717", border: "1px solid #2a2a2a", borderRadius: 14, color: "#f0f0f0", cursor: "pointer", textAlign: "left", marginBottom: 8 }}><div style={{ width: 35, height: 35, display: "grid", placeItems: "center", borderRadius: 9, backgroundColor: record.quick ? "#202020" : "#1b2500", color: record.quick ? "#aaa" : "#c8ff00", flexShrink: 0 }}>{record.quick ? "⚡" : "✓"}</div><div style={{ flex: 1, minWidth: 0 }}><div style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 4 }}><span style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600 }}>{record.title}</span>{record.quick && <span style={{ color: "#888", fontSize: 10, border: "1px solid #333", borderRadius: 4, padding: "2px 4px" }}>クイック</span>}</div><p style={{ color: "#ccc", fontFamily: "Outfit", fontSize: 13 }}>{record.result}<span style={{ color: "#666", fontFamily: "Inter", fontSize: 11 }}>　{record.sets} · {record.duration}</span></p><p style={{ color: "#777", fontSize: 11, marginTop: 5 }}>{record.share}</p></div><span style={{ color: "#555" }}>›</span></button></div>)}</div>}</section>
     </div>
@@ -32,7 +30,7 @@ export default function HistoryScreen({ onHome, onQuick, onSettings }: { onHome:
   </div></main>
 }
 
-function HistoryDetail({ record, onBack, onHome, onQuick, onSettings, onDelete }: { record: RecordItem; onBack: () => void; onHome: () => void; onQuick: () => void; onSettings: () => void; onDelete: (id: number) => void }) {
+function HistoryDetail({ record, onBack, onHome, onQuick, onSettings, onDelete }: { record: HistoryRecord; onBack: () => void; onHome: () => void; onQuick: () => void; onSettings: () => void; onDelete: (id: number) => void }) {
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [share, setShare] = useState(record.share)

@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react"
 
-const EXERCISES = ["ベンチプレス", "スクワット", "デッドリフト", "腕立て伏せ", "懸垂", "ランジ"]
-const TEAMS = ["自宅トレ", "ジムA"]
 const PREVIOUS_RECORDS: Record<string, { weight?: number; reps: number }> = {
   "ベンチプレス": { weight: 80, reps: 8 },
   "スクワット": { weight: 100, reps: 5 },
@@ -10,17 +8,17 @@ const PREVIOUS_RECORDS: Record<string, { weight?: number; reps: number }> = {
   "懸垂": { reps: 10 },
 }
 
-export default function QuickRecordScreen({ onBack }: { onBack: () => void }) {
+export default function QuickRecordScreen({ onBack, teams, exercises, onSaveShared, onSaveRecord }: { onBack: () => void; teams: { id: number; name: string }[]; exercises: string[]; onSaveShared: (record: { teamId: number; exercise: string; reps: number; weight?: number }) => void; onSaveRecord: (record: { exercise: string; reps: number; weight?: number; share: string }) => void }) {
   const [exercise, setExercise] = useState("")
   const [showExercises, setShowExercises] = useState(false)
   const [weight, setWeight] = useState("")
   const [reps, setReps] = useState(0)
   const [editingReps, setEditingReps] = useState(false)
   const [shareTo, setShareTo] = useState<"private" | "team">("private")
-  const [team, setTeam] = useState(TEAMS[0])
+  const [team, setTeam] = useState(teams[0]?.id ?? 0)
   const [saved, setSaved] = useState(false)
   const repsRef = useRef<HTMLInputElement>(null)
-  const canSave = Boolean(exercise) && reps > 0
+  const canSave = Boolean(exercise) && reps > 0 && (shareTo !== "team" || team > 0)
 
   useEffect(() => {
     if (editingReps) repsRef.current?.select()
@@ -28,6 +26,8 @@ export default function QuickRecordScreen({ onBack }: { onBack: () => void }) {
 
   function save() {
     if (!canSave) return
+    if (shareTo === "team" && team) onSaveShared({ teamId: team, exercise, reps, weight: weight ? Number(weight) : undefined })
+    onSaveRecord({ exercise, reps, weight: weight ? Number(weight) : undefined, share: shareTo === "team" && team ? `チーム · ${teams.find((item) => item.id === team)?.name ?? ""}` : "自分のみ" })
     setSaved(true)
   }
 
@@ -73,7 +73,7 @@ export default function QuickRecordScreen({ onBack }: { onBack: () => void }) {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#777" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showExercises ? "rotate(180deg)" : "none" }}><path d="M6 9l6 6 6-6" /></svg>
           </button>
           {showExercises && <div style={{ marginTop: 8, border: "1px solid #2a2a2a", borderRadius: 12, overflow: "hidden", backgroundColor: "#171717" }}>
-            {EXERCISES.map((item) => <button key={item} onClick={() => selectExercise(item)} style={{ width: "100%", padding: "14px 16px", background: item === exercise ? "#202020" : "transparent", border: "none", borderBottom: "1px solid #242424", textAlign: "left", color: item === exercise ? "#c8ff00" : "#ccc", fontSize: 14, cursor: "pointer" }}>{item}</button>)}
+            {exercises.map((item) => <button key={item} onClick={() => selectExercise(item)} style={{ width: "100%", padding: "14px 16px", background: item === exercise ? "#202020" : "transparent", border: "none", borderBottom: "1px solid #242424", textAlign: "left", color: item === exercise ? "#c8ff00" : "#ccc", fontSize: 14, cursor: "pointer" }}>{item}</button>)}
           </div>}
 
           <div style={{ height: 28 }} />
@@ -99,7 +99,7 @@ export default function QuickRecordScreen({ onBack }: { onBack: () => void }) {
             <ShareOption active={shareTo === "private"} onClick={() => setShareTo("private")} title="自分のみ" detail="非公開で記録" icon="lock" />
             <ShareOption active={shareTo === "team"} onClick={() => setShareTo("team")} title="チーム" detail="メンバーに共有" icon="team" />
           </div>
-          {shareTo === "team" && <select value={team} onChange={(event) => setTeam(event.target.value)} style={{ ...fieldStyle, marginTop: 10, appearance: "none", color: "#f0f0f0", cursor: "pointer" }}>{TEAMS.map((item) => <option key={item} value={item}>{item}</option>)}</select>}
+          {shareTo === "team" && (teams.length ? <select value={team} onChange={(event) => setTeam(Number(event.target.value))} style={{ ...fieldStyle, marginTop: 10, appearance: "none", color: "#f0f0f0", cursor: "pointer" }}>{teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <p style={{ color: "#d7a66d", fontSize: 12, marginTop: 10 }}>共有できるチームがありません</p>)}
         </div>
 
         <footer style={{ position: "absolute", bottom: 0, width: "100%", padding: "14px 24px 28px", background: "#0d0d0d", borderTop: "1px solid #1e1e1e" }}>

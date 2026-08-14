@@ -10,10 +10,12 @@ function formatTime(seconds: number) {
   return h > 0 ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
 }
 
-export default function TrainingEndScreen({ exercises, elapsed, onReturn, onSave }: { exercises: Exercise[]; elapsed: number; onReturn: () => void; onSave: () => void }) {
+export type AddedWorkoutExercise = { name: string; sets: number }
+
+export default function TrainingEndScreen({ exercises, initialExerciseIds, menuName, elapsed, onReturn, onSave }: { exercises: Exercise[]; initialExerciseIds: Set<number>; menuName: string; elapsed: number; onReturn: () => void; onSave: (added: AddedWorkoutExercise[]) => void }) {
   const completedExercises = exercises.filter((exercise) => exercise.sets.some((set) => set.completed))
   const completedSets = completedExercises.reduce((total, exercise) => total + exercise.sets.filter((set) => set.completed).length, 0)
-  const addedExercises = exercises.filter((exercise) => exercise.id > 3)
+  const addedExercises = exercises.filter((exercise) => !initialExerciseIds.has(exercise.id))
   const [addToMenu, setAddToMenu] = useState<Record<number, boolean>>(() => Object.fromEntries(addedExercises.map((exercise) => [exercise.id, true])))
   const [note, setNote] = useState("")
 
@@ -24,7 +26,7 @@ export default function TrainingEndScreen({ exercises, elapsed, onReturn, onSave
     </header>
     <div style={{ padding: "24px", overflowY: "auto", paddingBottom: 136 }}>
       <section style={cardStyle}>
-        <p style={{ fontFamily: "Outfit", fontSize: 19, fontWeight: 700, marginBottom: 20 }}>胸トレ</p>
+        <p style={{ fontFamily: "Outfit", fontSize: 19, fontWeight: 700, marginBottom: 20 }}>{menuName}</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
           <Metric label="トレーニング時間" value={formatTime(elapsed)} />
           <Metric label="実施種目数" value={`${completedExercises.length}種目`} />
@@ -37,7 +39,7 @@ export default function TrainingEndScreen({ exercises, elapsed, onReturn, onSave
       <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="今日のトレーニングのメモを入力" style={{ width: "100%", minHeight: 86, padding: "13px 14px", resize: "vertical", backgroundColor: "#171717", border: "1px solid #2a2a2a", borderRadius: 13, color: "#ddd", outline: "none", fontFamily: "Inter", fontSize: 14, lineHeight: 1.5 }} />
       {addedExercises.length > 0 && <><p style={sectionLabel}>メニューへ追加</p><section style={cardStyle}>{addedExercises.map((exercise, index) => <div key={exercise.id} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: index < addedExercises.length - 1 ? 16 : 0, marginBottom: index < addedExercises.length - 1 ? 16 : 0, borderBottom: index < addedExercises.length - 1 ? "1px solid #242424" : "none" }}><div style={{ flex: 1 }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{exercise.name}</p><p style={{ color: "#777", fontSize: 12 }}>この種目を「胸トレ」に追加しますか？</p></div><div style={{ display: "flex", border: "1px solid #333", borderRadius: 8, overflow: "hidden" }}><button onClick={() => setAddToMenu((value) => ({ ...value, [exercise.id]: true }))} style={choiceStyle(addToMenu[exercise.id])}>追加する</button><button onClick={() => setAddToMenu((value) => ({ ...value, [exercise.id]: false }))} style={choiceStyle(!addToMenu[exercise.id])}>しない</button></div></div>)}</section></>}
     </div>
-    <footer style={{ position: "absolute", bottom: 0, width: "100%", display: "flex", gap: 10, padding: "14px 24px 28px", backgroundColor: "#0d0d0d", borderTop: "1px solid #1e1e1e" }}><button onClick={onReturn} style={{ ...buttonStyle, flex: 1, backgroundColor: "#202020", border: "1px solid #333", color: "#ddd" }}>トレーニングに戻る</button><button onClick={onSave} style={{ ...buttonStyle, flex: 1.15 }}>保存して終了</button></footer>
+    <footer style={{ position: "absolute", bottom: 0, width: "100%", display: "flex", gap: 10, padding: "14px 24px 28px", backgroundColor: "#0d0d0d", borderTop: "1px solid #1e1e1e" }}><button onClick={onReturn} style={{ ...buttonStyle, flex: 1, backgroundColor: "#202020", border: "1px solid #333", color: "#ddd" }}>トレーニングに戻る</button><button onClick={() => onSave(addedExercises.filter((exercise) => addToMenu[exercise.id]).map((exercise) => ({ name: exercise.name, sets: exercise.sets.length })))} style={{ ...buttonStyle, flex: 1.15 }}>保存して終了</button></footer>
   </div></main>
 }
 
