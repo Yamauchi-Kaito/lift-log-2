@@ -43,6 +43,12 @@ const TRAINING_DAYS = new Set([1, 5, 7, 12, 14, 19, 21, 26])
 const TODAY = 9
 const filterChipStyle = { flexShrink: 0, padding: "7px 11px", border: "1px solid", borderRadius: 15, background: "#202020", fontFamily: "Inter", fontSize: 11, cursor: "pointer" } as const
 
+function uniqueWorkspaces(workspaces: Workspace[]) {
+  const byId = new Map<string, Workspace>()
+  for (const workspace of workspaces) if (!byId.has(workspace.id)) byId.set(workspace.id, workspace)
+  return [...byId.values()]
+}
+
 function createStorageObjectId() {
   const cryptoApi = globalThis.crypto
   if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID()
@@ -759,14 +765,14 @@ export default function App() {
         system_role: "owner" | "admin" | "member"
         workspaces: { id: string; name: string; type: "personal" | "team" } | { id: string; name: string; type: "personal" | "team" }[] | null
       }
-      const loaded: Workspace[] = ((data ?? []) as MembershipRow[])
+      const loaded = uniqueWorkspaces(((data ?? []) as MembershipRow[])
         .flatMap<Workspace>((membership) => {
           const workspace = Array.isArray(membership.workspaces) ? membership.workspaces[0] : membership.workspaces
           if (!workspace) return []
           if (workspace.type === "personal") return [{ id: workspace.id, name: workspace.name, type: "個人" } satisfies PersonalWorkspace]
           return [{ id: workspace.id, name: workspace.name, type: "チーム", systemRole: membership.system_role } satisfies TeamWorkspace]
         })
-        .sort((first, second) => Number(second.type === "個人") - Number(first.type === "個人"))
+      ).sort((first, second) => Number(second.type === "個人") - Number(first.type === "個人"))
 
       if (!loaded.some((workspace) => workspace.type === "個人")) throw new Error("Personal workspace missing")
       if (!active) return
@@ -919,14 +925,20 @@ export default function App() {
 
     const { data, error } = await supabase
       .from("workspace_invitations")
-      .select("id, expires_at, workspaces(name)")
+      .select("id, expires_at, accepted_at, revoked_at, workspaces(name)")
       .order("created_at", { ascending: false })
     if (error) throw error
 
-    type IncomingInvitationRow = { id: string; expires_at: string; workspaces: { name: string } | { name: string }[] | null }
-    setIncomingInvitations(((data ?? []) as IncomingInvitationRow[]).flatMap((invitation) => {
+    type IncomingInvitationRow = { id: string; expires_at: string; accepted_at: string | null; revoked_at: string | null; workspaces: { name: string } | { name: string }[] | null }
+    setIncomingInvitations(((data ?? []) as IncomingInvitationRow[]).map((invitation) => {
       const workspace = Array.isArray(invitation.workspaces) ? invitation.workspaces[0] : invitation.workspaces
-      return workspace ? [{ id: invitation.id, workspaceName: workspace.name, expiresAt: invitation.expires_at } satisfies IncomingInvitation] : []
+      return {
+        id: invitation.id,
+        workspaceName: workspace?.name ?? "チームワークスペース",
+        expiresAt: invitation.expires_at,
+        acceptedAt: invitation.accepted_at,
+        revokedAt: invitation.revoked_at,
+      } satisfies IncomingInvitation
     }))
   }, [user])
 
@@ -1194,6 +1206,7 @@ export default function App() {
     setProfileExists(true)
     setTrainingTendency(tendency)
     setOnboarding(false)
+    void loadIncomingInvitations().catch((loadError) => console.error("Incoming invitation reload failed:", loadError))
     if (teamUse) setScreen("team-create")
   }
 
@@ -1646,7 +1659,7 @@ export default function App() {
         return false
       }
 
-      setWorkspaces((current) => [...current, { id: String(workspace.id), name: workspace.name, type: "チーム", systemRole: "owner" }])
+      setWorkspaces((current) => uniqueWorkspaces([...current, { id: String(workspace.id), name: workspace.name, type: "チーム", systemRole: "owner" }]))
       setWsIndex(workspaces.length)
       setScreen("home")
       return true
