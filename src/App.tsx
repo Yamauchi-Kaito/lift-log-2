@@ -18,7 +18,7 @@ import WorkspaceManagerScreen from "./WorkspaceManagerScreen"
 import TeamManageScreen from "./TeamManageScreen"
 import type { TeamInvitation } from "./TeamManageScreen"
 import GrowthScreen from "./GrowthScreen"
-import type { GrowthPhoto } from "./GrowthScreen"
+import type { GrowthPhoto, GrowthPhotoDraft } from "./GrowthScreen"
 import TeamMemberScreen from "./TeamMemberScreen"
 import type { TeamMember, SharedRecord } from "./TeamMemberScreen"
 import type { ExerciseId, RegisteredExercise, TrainingMenu } from "./MenuEditorScreen"
@@ -501,11 +501,10 @@ export default function App() {
   const [activityFilter, setActivityFilter] = useState<string[]>([])
   const [selectedActivityDay, setSelectedActivityDay] = useState<number | null>(null)
   const [teamMembers, setTeamMembers] = useState(INITIAL_TEAM_MEMBERS)
-  const [growthPhotos, setGrowthPhotos] = useState<GrowthPhoto[]>([
-    { id: 1, ownerId: 1, owner: "田中 太郎", day: 14, when: "8月14日", visibility: "自分のみ", note: "朝の記録", tone: "#6b5c55" },
-    { id: 2, ownerId: 1, owner: "田中 太郎", day: 7, when: "8月7日", visibility: "自分のみ", tone: "#5e6659" },
-    { id: 3, ownerId: 1, owner: "田中 太郎", day: 7, when: "8月7日", visibility: "自分のみ", tone: "#6a5a52" },
-  ])
+  const [growthPhotos, setGrowthPhotos] = useState<GrowthPhoto[]>([])
+  const [growthPhotoLoading, setGrowthPhotoLoading] = useState(false)
+  const [growthPhotoSaving, setGrowthPhotoSaving] = useState(false)
+  const [growthPhotoError, setGrowthPhotoError] = useState<string | null>(null)
   const [sharedRecords, setSharedRecords] = useState<SharedRecord[]>([])
   const [teamCreating, setTeamCreating] = useState(false)
   const [teamCreateError, setTeamCreateError] = useState<string | null>(null)
@@ -923,6 +922,67 @@ export default function App() {
     void loadIncomingInvitations().catch((error) => console.error("Incoming invitation load failed:", error))
   }, [loadIncomingInvitations])
 
+  const loadGrowthPhotos = useCallback(async () => {
+    const current = workspaces[wsIndex]
+    if (!user || !current) {
+      setGrowthPhotos([])
+      setGrowthPhotoLoading(false)
+      return false
+    }
+
+    setGrowthPhotoLoading(true)
+    setGrowthPhotoError(null)
+    let query = supabase
+      .from("body_photos")
+      .select("id, owner_id, workspace_id, visibility, taken_at, note, storage_path")
+      .is("deleted_at", null)
+      .order("taken_at", { ascending: false })
+
+    if (current.type === "チーム") query = query.eq("workspace_id", current.id).eq("visibility", "team")
+    else query = query.eq("owner_id", user.id).is("workspace_id", null)
+
+    const { data, error } = await query
+    if (error) {
+      setGrowthPhotoLoading(false)
+      setGrowthPhotoError("成長記録を読み込めませんでした。通信を確認して再試行してください。")
+      return false
+    }
+
+    type BodyPhotoRow = { id: string; owner_id: string; workspace_id: string | null; visibility: "private" | "team"; taken_at: string; note: string | null; storage_path: string }
+    try {
+      const photos = await Promise.all(((data ?? []) as BodyPhotoRow[]).map(async (photo) => {
+        const { data: signedUrl, error: signedUrlError } = await supabase.storage.from("body-photos").createSignedUrl(photo.storage_path, 60 * 60)
+        if (signedUrlError || !signedUrl?.signedUrl) throw signedUrlError ?? new Error("Signed URL missing")
+        const takenAt = new Date(photo.taken_at)
+        return {
+          id: photo.id,
+          ownerId: photo.owner_id,
+          owner: photo.owner_id === user.id ? "自分" : "メンバー",
+          workspaceId: photo.workspace_id,
+          visibility: photo.visibility,
+          takenAt: photo.taken_at,
+          dateKey: `${takenAt.getFullYear()}-${String(takenAt.getMonth() + 1).padStart(2, "0")}-${String(takenAt.getDate()).padStart(2, "0")}`,
+          dateLabel: new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric" }).format(takenAt),
+          note: photo.note ?? undefined,
+          storagePath: photo.storage_path,
+          imageUrl: signedUrl.signedUrl,
+        } satisfies GrowthPhoto
+      }))
+      setGrowthPhotos(photos)
+      setGrowthPhotoLoading(false)
+      return true
+    } catch (signedUrlError) {
+      console.error("Body photo signed URL load failed:", signedUrlError)
+      setGrowthPhotoLoading(false)
+      setGrowthPhotoError("写真を表示できませんでした。もう一度お試しください。")
+      return false
+    }
+  }, [user, workspaces, wsIndex])
+
+  useEffect(() => {
+    void loadGrowthPhotos()
+  }, [loadGrowthPhotos])
+
   useEffect(() => {
     let active = true
 
@@ -981,6 +1041,125 @@ export default function App() {
   const currentWorkspace = workspaces[wsIndex]
   const currentTeamWorkspace = currentWorkspace?.type === "チーム" ? currentWorkspace : undefined
   if (!currentWorkspace) return <main style={{ minHeight: "100vh", background: "#0d0d0d" }} />
+
+  const saveGrowthPhoto = async (draft: GrowthPhotoDraft) => {
+    const allowedTypes: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    }
+    const extension = allowedTypes[draft.file.type]
+    if (!extension) {
+      setGrowthPhotoError("JPEG、PNG、WebPのみ登録できます。")
+      return false
+    }
+    if (draft.file.size > 10 * 1024 * 1024) {
+      setGrowthPhotoError("写真は10MB以下にしてください。")
+      return false
+    }
+    if (draft.visibility === "team" && !currentTeamWorkspace) {
+      setGrowthPhotoError("チーム共有はチームWorkspaceで登録してください。")
+      return false
+    }
+
+    setGrowthPhotoSaving(true)
+    setGrowthPhotoError(null)
+    const storagePath = `${user.id}/${crypto.randomUUID()}.${extension}`
+    const { error: uploadError } = await supabase.storage
+      .from("body-photos")
+      .upload(storagePath, draft.file, { contentType: draft.file.type, upsert: false })
+    if (uploadError) {
+      console.error("Body photo upload failed:", uploadError)
+      setGrowthPhotoSaving(false)
+      setGrowthPhotoError("写真をアップロードできませんでした。もう一度お試しください。")
+      return false
+    }
+
+    const { error: metadataError } = await supabase.from("body_photos").insert({
+      owner_id: user.id,
+      workspace_id: draft.visibility === "team" ? currentTeamWorkspace?.id : null,
+      visibility: draft.visibility,
+      taken_at: new Date().toISOString(),
+      note: draft.note.trim() || null,
+      storage_path: storagePath,
+      mime_type: draft.file.type,
+      size_bytes: draft.file.size,
+    })
+    if (metadataError) {
+      console.error("Body photo metadata save failed:", metadataError)
+      const { error: cleanupError } = await supabase.storage.from("body-photos").remove([storagePath])
+      setGrowthPhotoSaving(false)
+      setGrowthPhotoError(cleanupError
+        ? "写真は保存されましたが、記録の保存と後片付けに失敗しました。"
+        : "写真のアップロード後に記録を保存できませんでした。")
+      return false
+    }
+
+    const reloaded = await loadGrowthPhotos()
+    setGrowthPhotoSaving(false)
+    if (!reloaded) setGrowthPhotoError("写真は保存しましたが、一覧を更新できませんでした。")
+    return reloaded
+  }
+
+  const updateGrowthPhoto = async (photo: GrowthPhoto, changes: { visibility: "private" | "team"; note: string }) => {
+    if (photo.ownerId !== user.id) {
+      setGrowthPhotoError("自分の写真のみ変更できます。")
+      return false
+    }
+    if (changes.visibility === "team" && !currentTeamWorkspace) {
+      setGrowthPhotoError("チーム共有はチームWorkspaceで変更してください。")
+      return false
+    }
+
+    setGrowthPhotoSaving(true)
+    setGrowthPhotoError(null)
+    const { error } = await supabase.from("body_photos").update({
+      visibility: changes.visibility,
+      workspace_id: changes.visibility === "team" ? currentTeamWorkspace?.id : null,
+      note: changes.note.trim() || null,
+    }).eq("id", photo.id)
+    if (error) {
+      console.error("Body photo update failed:", error)
+      setGrowthPhotoSaving(false)
+      setGrowthPhotoError("写真の設定を変更できませんでした。もう一度お試しください。")
+      return false
+    }
+
+    const reloaded = await loadGrowthPhotos()
+    setGrowthPhotoSaving(false)
+    if (!reloaded) setGrowthPhotoError("設定は変更しましたが、一覧を更新できませんでした。")
+    return reloaded
+  }
+
+  const deleteGrowthPhoto = async (photo: GrowthPhoto) => {
+    if (photo.ownerId !== user.id) {
+      setGrowthPhotoError("自分の写真のみ削除できます。")
+      return false
+    }
+
+    setGrowthPhotoSaving(true)
+    setGrowthPhotoError(null)
+    const { error: storageError } = await supabase.storage.from("body-photos").remove([photo.storagePath])
+    if (storageError) {
+      console.error("Body photo storage delete failed:", storageError)
+      setGrowthPhotoSaving(false)
+      setGrowthPhotoError("写真ファイルを削除できませんでした。記録は残っています。")
+      return false
+    }
+
+    const { error: metadataError } = await supabase.from("body_photos").delete().eq("id", photo.id)
+    if (metadataError) {
+      console.error("Body photo metadata delete failed:", metadataError)
+      setGrowthPhotoSaving(false)
+      setGrowthPhotoError("写真ファイルは削除しましたが、記録を削除できませんでした。")
+      return false
+    }
+
+    const reloaded = await loadGrowthPhotos()
+    setGrowthPhotoSaving(false)
+    if (!reloaded) setGrowthPhotoError("写真は削除しましたが、一覧を更新できませんでした。")
+    return reloaded
+  }
 
   const completeOnboarding = async (teamUse: boolean, tendency: string) => {
     setProfileSaving(true)
@@ -1535,7 +1714,7 @@ export default function App() {
     }
   }} onRemoveRecord={(id) => setSharedRecords((current) => current.filter((record) => record.id !== id))} />
   if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setWsIndex(workspaces.findIndex((workspace) => workspace.id === id)); setScreen("home") }} onRename={(id, name) => setWorkspaces((current) => current.map((workspace) => workspace.id === id ? { ...workspace, name } : workspace))} onExit={(id) => { setWorkspaces((current) => current.filter((workspace) => workspace.id !== id)); setWsIndex(0) }} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setWsIndex(workspaces.findIndex((workspace) => workspace.id === id)); setScreen("team-manage") }} />
-  if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} onBack={() => setScreen("home")} onSave={(photo) => setGrowthPhotos((current) => [photo, ...current])} onUpdate={(photo) => setGrowthPhotos((current) => current.map((item) => item.id === photo.id ? { ...photo, teamId: photo.visibility === "チームに共有" ? currentTeamWorkspace?.id : photo.teamId } : item))} onDelete={(id) => setGrowthPhotos((current) => current.filter((photo) => photo.id !== id))} />
+  if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onSave={saveGrowthPhoto} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
   if (screen === "settings") {
     return <SettingsScreen onHome={() => setScreen("home")} onQuick={() => setScreen("quick-record")} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onCreateTeam={() => setScreen("team-create")} onWorkspaceManager={() => setScreen("workspace-manager")} tendency={trainingTendency} onTendency={setTrainingTendency} workspaces={workspaces} currentWorkspaceId={currentWorkspace.id} onSelectWorkspace={(id) => setWsIndex(workspaces.findIndex((workspace) => workspace.id === id))} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} onAcceptInvitation={async (id) => {
       setAcceptingInvitationId(id)
