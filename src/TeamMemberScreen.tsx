@@ -1,8 +1,8 @@
 import { useState } from "react"
 
 export type TeamRole = "Owner" | "Admin" | "Member"
-export type TeamMember = { id: number; name: string; role?: string; systemRole: TeamRole; weeklyCount: number; recent: string }
-export type SharedRecord = { id: number; teamId: number; memberId: number; member: string; when: string; exercise: string; reps: number; weight?: number; day?: number; sets?: number }
+export type TeamMember = { id: string; name: string; role?: string; systemRole: TeamRole; weeklyCount: number; recent: string }
+export type SharedRecord = { id: string; teamId: string; memberId: string; member: string; when: string; exercise: string; reps: number; weight?: number; day?: number; sets?: number }
 
 export default function TeamMemberScreen({ member, records, onBack }: { member: TeamMember; records: SharedRecord[]; onBack: () => void }) {
   const [period, setPeriod] = useState<"week" | "month" | "all">("month")

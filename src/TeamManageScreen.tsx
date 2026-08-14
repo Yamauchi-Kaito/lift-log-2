@@ -1,6 +1,6 @@
 import type { TeamMember, TeamRole, SharedRecord } from "./TeamMemberScreen"
 
-export default function TeamManageScreen({ teamName, members, records, currentRole, onBack, onRoleChange, onRemoveRecord }: { teamName: string; members: TeamMember[]; records: SharedRecord[]; currentRole: TeamRole; onBack: () => void; onRoleChange: (id: number, role: TeamRole) => void; onRemoveRecord: (id: number) => void }) {
+export default function TeamManageScreen({ teamName, members, records, currentRole, onBack, onRoleChange, onRemoveRecord }: { teamName: string; members: TeamMember[]; records: SharedRecord[]; currentRole: TeamRole; onBack: () => void; onRoleChange: (id: string, role: TeamRole) => void; onRemoveRecord: (id: string) => void }) {
   const canManage = currentRole === "Owner" || currentRole === "Admin"
   const owner = currentRole === "Owner"
   return <main style={page}><div style={content}><header style={header}><button onClick={onBack} style={back}>‹</button><div><p style={eyebrow}>TEAM SETTINGS</p><h1 style={title}>{teamName}</h1></div></header><div style={body}>

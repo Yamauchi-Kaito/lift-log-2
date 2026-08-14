@@ -1,45 +1,76 @@
 import { useEffect, useRef, useState } from "react"
+import type { RegisteredExercise } from "./MenuEditorScreen"
 
-const PREVIOUS_RECORDS: Record<string, { weight?: number; reps: number }> = {
-  "ベンチプレス": { weight: 80, reps: 8 },
-  "スクワット": { weight: 100, reps: 5 },
-  "デッドリフト": { weight: 120, reps: 5 },
-  "腕立て伏せ": { reps: 30 },
-  "懸垂": { reps: 10 },
+export type QuickRecordSaveData = {
+  exerciseId: RegisteredExercise["id"]
+  exerciseName: string
+  kind: RegisteredExercise["kind"]
+  weight: number | null
+  reps: number
+  shareWorkspaceId: string | null
 }
 
-export default function QuickRecordScreen({ onBack, teams, exercises, onSaveShared, onSaveRecord }: { onBack: () => void; teams: { id: number; name: string }[]; exercises: string[]; onSaveShared: (record: { teamId: number; exercise: string; reps: number; weight?: number }) => void; onSaveRecord: (record: { exercise: string; reps: number; weight?: number; share: string }) => void }) {
+type PreviousSet = { weight: number | null; reps: number }
+
+export default function QuickRecordScreen({ onBack, teams, exercises, onLoadPreviousSet, onSaveRecord }: { onBack: () => void; teams: { id: string; name: string }[]; exercises: RegisteredExercise[]; onLoadPreviousSet: (exerciseId: RegisteredExercise["id"], kind: RegisteredExercise["kind"]) => Promise<PreviousSet | null>; onSaveRecord: (record: QuickRecordSaveData) => Promise<string | null> }) {
   const [exercise, setExercise] = useState("")
+  const [exerciseId, setExerciseId] = useState<RegisteredExercise["id"] | null>(null)
   const [showExercises, setShowExercises] = useState(false)
   const [weight, setWeight] = useState("")
   const [reps, setReps] = useState(0)
   const [editingReps, setEditingReps] = useState(false)
   const [shareTo, setShareTo] = useState<"private" | "team">("private")
-  const [team, setTeam] = useState(teams[0]?.id ?? 0)
+  const [team, setTeam] = useState(teams[0]?.id ?? "")
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [previousRecord, setPreviousRecord] = useState<PreviousSet | null>(null)
+  const [previousLoading, setPreviousLoading] = useState(false)
   const repsRef = useRef<HTMLInputElement>(null)
-  const canSave = Boolean(exercise) && reps > 0 && (shareTo !== "team" || team > 0)
+  const selectionRequest = useRef(0)
+  const canSave = exerciseId !== null && reps > 0 && (shareTo !== "team" || Boolean(team))
 
   useEffect(() => {
     if (editingReps) repsRef.current?.select()
   }, [editingReps])
 
-  function save() {
+  async function save() {
     if (!canSave) return
-    if (shareTo === "team" && team) onSaveShared({ teamId: team, exercise, reps, weight: weight ? Number(weight) : undefined })
-    onSaveRecord({ exercise, reps, weight: weight ? Number(weight) : undefined, share: shareTo === "team" && team ? `チーム · ${teams.find((item) => item.id === team)?.name ?? ""}` : "自分のみ" })
+    const selectedExercise = exercises.find((item) => item.id === exerciseId)
+    const parsedWeight = weight.trim() === "" ? null : Number(weight)
+    if (!selectedExercise || (parsedWeight !== null && !Number.isFinite(parsedWeight))) {
+      setSaveError("入力内容を確認してください。")
+      return
+    }
+
+    setSaving(true)
+    setSaveError(null)
+    const error = await onSaveRecord({ exerciseId: selectedExercise.id, exerciseName: selectedExercise.name, kind: selectedExercise.kind, weight: parsedWeight, reps, shareWorkspaceId: shareTo === "team" ? team : null })
+    setSaving(false)
+    if (error) {
+      setSaveError(error)
+      return
+    }
     setSaved(true)
   }
 
-  function selectExercise(name: string) {
-    const previous = PREVIOUS_RECORDS[name]
-    setExercise(name)
+  async function selectExercise(selectedExercise: RegisteredExercise) {
+    const requestId = selectionRequest.current + 1
+    selectionRequest.current = requestId
+    setExercise(selectedExercise.name)
+    setExerciseId(selectedExercise.id)
+    setWeight("")
+    setReps(0)
+    setPreviousRecord(null)
+    setPreviousLoading(true)
+    setShowExercises(false)
+    const previous = await onLoadPreviousSet(selectedExercise.id, selectedExercise.kind)
+    if (selectionRequest.current !== requestId) return
+    setPreviousLoading(false)
+    setPreviousRecord(previous)
     setWeight(previous?.weight?.toString() ?? "")
     setReps(previous?.reps ?? 0)
-    setShowExercises(false)
   }
-
-  const previousRecord = PREVIOUS_RECORDS[exercise]
 
   if (saved) {
     return (
@@ -73,7 +104,7 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onSaveShar
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#777" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showExercises ? "rotate(180deg)" : "none" }}><path d="M6 9l6 6 6-6" /></svg>
           </button>
           {showExercises && <div style={{ marginTop: 8, border: "1px solid #2a2a2a", borderRadius: 12, overflow: "hidden", backgroundColor: "#171717" }}>
-            {exercises.map((item) => <button key={item} onClick={() => selectExercise(item)} style={{ width: "100%", padding: "14px 16px", background: item === exercise ? "#202020" : "transparent", border: "none", borderBottom: "1px solid #242424", textAlign: "left", color: item === exercise ? "#c8ff00" : "#ccc", fontSize: 14, cursor: "pointer" }}>{item}</button>)}
+            {exercises.map((item) => <button key={item.id} onClick={() => void selectExercise(item)} style={{ width: "100%", padding: "14px 16px", background: item.name === exercise ? "#202020" : "transparent", border: "none", borderBottom: "1px solid #242424", textAlign: "left", color: item.name === exercise ? "#c8ff00" : "#ccc", fontSize: 14, cursor: "pointer" }}>{item.name}</button>)}
           </div>}
 
           <div style={{ height: 28 }} />
@@ -91,7 +122,8 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onSaveShar
             <button onClick={() => setReps((value) => value + 1)} style={stepperStyle}>＋</button>
           </div>
           <p style={{ textAlign: "center", color: "#666", fontSize: 11, marginTop: 6 }}>数字をタップして直接入力</p>
-          {previousRecord && <p style={{ textAlign: "center", color: "#8b8b8b", fontSize: 12, marginTop: 14 }}><span style={{ color: "#c8ff00", fontFamily: "Outfit", fontWeight: 600 }}>前回</span>{previousRecord.weight ? ` ${previousRecord.weight}kg × ${previousRecord.reps}回` : ` ${previousRecord.reps}回`}</p>}
+          {previousLoading && <p style={{ textAlign: "center", color: "#777", fontSize: 12, marginTop: 14 }}>前回記録を読み込み中...</p>}
+          {previousRecord && <p style={{ textAlign: "center", color: "#8b8b8b", fontSize: 12, marginTop: 14 }}><span style={{ color: "#c8ff00", fontFamily: "Outfit", fontWeight: 600 }}>前回</span>{previousRecord.weight !== null ? ` ${previousRecord.weight}kg × ${previousRecord.reps}回` : ` ${previousRecord.reps}回`}</p>}
 
           <div style={{ height: 30 }} />
           <Label>共有先</Label>
@@ -99,11 +131,12 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onSaveShar
             <ShareOption active={shareTo === "private"} onClick={() => setShareTo("private")} title="自分のみ" detail="非公開で記録" icon="lock" />
             <ShareOption active={shareTo === "team"} onClick={() => setShareTo("team")} title="チーム" detail="メンバーに共有" icon="team" />
           </div>
-          {shareTo === "team" && (teams.length ? <select value={team} onChange={(event) => setTeam(Number(event.target.value))} style={{ ...fieldStyle, marginTop: 10, appearance: "none", color: "#f0f0f0", cursor: "pointer" }}>{teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <p style={{ color: "#d7a66d", fontSize: 12, marginTop: 10 }}>共有できるチームがありません</p>)}
+          {shareTo === "team" && (teams.length ? <select value={team} onChange={(event) => setTeam(event.target.value)} style={{ ...fieldStyle, marginTop: 10, appearance: "none", color: "#f0f0f0", cursor: "pointer" }}>{teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <p style={{ color: "#d7a66d", fontSize: 12, marginTop: 10 }}>共有できるチームがありません</p>)}
+          {saveError && <p role="alert" style={{ color: "#f09a9a", fontSize: 12, lineHeight: 1.5, marginTop: 20 }}>{saveError}</p>}
         </div>
 
         <footer style={{ position: "absolute", bottom: 0, width: "100%", padding: "14px 24px 28px", background: "#0d0d0d", borderTop: "1px solid #1e1e1e" }}>
-          <button disabled={!canSave} onClick={save} style={{ ...saveButtonStyle, opacity: canSave ? 1 : 0.35, cursor: canSave ? "pointer" : "not-allowed" }}>記録を保存</button>
+          <button disabled={!canSave || saving} onClick={() => void save()} style={{ ...saveButtonStyle, opacity: canSave && !saving ? 1 : 0.35, cursor: canSave && !saving ? "pointer" : "not-allowed" }}>{saving ? "保存中..." : "記録を保存"}</button>
         </footer>
       </div>
     </main>

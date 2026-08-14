@@ -1,22 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import TrainingEndScreen from "./TrainingEndScreen"
-import type { AddedWorkoutExercise } from "./TrainingEndScreen"
-import type { TrainingMenu } from "./MenuEditorScreen"
+import type { WorkoutSaveData } from "./TrainingEndScreen"
+import type { ExerciseId, RegisteredExercise, TrainingMenu } from "./MenuEditorScreen"
 
 // ─── Types ───────────────────────────────────────────────
 
-type SetData = {
+export type WorkoutSet = {
   id: number
-  weight: number
+  position?: number
+  weight: number | null
   reps: number
   completed: boolean
 }
 
-type Exercise = {
+export type WorkoutExercise = {
   id: number
+  exerciseId?: ExerciseId
   name: string
-  prevSets: { weight: number; reps: number }[]
-  sets: SetData[]
+  kind?: RegisteredExercise["kind"]
+  prevSets: { weight: number | null; reps: number }[]
+  sets: WorkoutSet[]
 }
 
 const ADDABLE_EXERCISES = [
@@ -29,7 +32,7 @@ const ADDABLE_EXERCISES = [
 
 // ─── Initial data (前回記録を初期値として使用) ──────────────
 
-const INITIAL_EXERCISES: Exercise[] = [
+const INITIAL_EXERCISES: WorkoutExercise[] = [
   {
     id: 1,
     name: "ベンチプレス",
@@ -226,11 +229,11 @@ function SetRow({
   onWeightChange,
   onRepsChange,
 }: {
-  set: SetData
+  set: WorkoutSet
   setIndex: number
   isNext: boolean
   onComplete: () => void
-  onWeightChange: (v: number) => void
+  onWeightChange: (v: number | null) => void
   onRepsChange: (v: number) => void
 }) {
   const [editingWeight, setEditingWeight] = useState(false)
@@ -289,8 +292,8 @@ function SetRow({
             ref={weightRef}
             type="number"
             inputMode="decimal"
-            value={set.weight}
-            onChange={(e) => onWeightChange(Number(e.target.value))}
+            value={set.weight ?? ""}
+            onChange={(e) => onWeightChange(e.target.value === "" ? null : Number(e.target.value))}
             onBlur={() => setEditingWeight(false)}
             style={{
               width: 52,
@@ -322,7 +325,7 @@ function SetRow({
               textAlign: "center",
             }}
           >
-            {set.weight}
+            {set.weight ?? "—"}
           </button>
         )}
         <span
@@ -492,10 +495,10 @@ function ExerciseSection({
   onDragStart,
   onDrop,
 }: {
-  exercise: Exercise
+  exercise: WorkoutExercise
   nextSetGlobalId: number | null
   onCompleteSet: (exId: number, setId: number) => void
-  onWeightChange: (exId: number, setId: number, v: number) => void
+  onWeightChange: (exId: number, setId: number, v: number | null) => void
   onRepsChange: (exId: number, setId: number, v: number) => void
   onAddSet: (exId: number) => void
   onSelectExercise: (exId: number, name: string, weight: number, reps: number) => void
@@ -661,18 +664,20 @@ function ExerciseSection({
 
 // ─── WorkoutScreen ───────────────────────────────────────
 
-function initialExercises(menu?: TrainingMenu): Exercise[] {
-  if (!menu) return INITIAL_EXERCISES.map((exercise) => ({ ...exercise, prevSets: [...exercise.prevSets], sets: exercise.sets.map((set) => ({ ...set })) }))
+function initialExercises(menu: TrainingMenu | undefined, registeredExercises: RegisteredExercise[]): WorkoutExercise[] {
+  if (!menu) return INITIAL_EXERCISES.map((exercise) => ({ ...exercise, exerciseId: registeredExercises.find((registered) => registered.name === exercise.name)?.id, kind: registeredExercises.find((registered) => registered.name === exercise.name)?.kind, prevSets: [...exercise.prevSets], sets: exercise.sets.map((set) => ({ ...set })) }))
   return menu.exercises.map((item, exerciseIndex) => {
     const previous = INITIAL_EXERCISES.find((exercise) => exercise.name === item.name)?.prevSets ?? []
-    const fallback = previous[0] ?? { weight: item.name === "懸垂" || item.name === "腕立て伏せ" ? 0 : 20, reps: 10 }
-    return { id: exerciseIndex + 1, name: item.name, prevSets: previous, sets: Array.from({ length: item.sets }, (_, setIndex) => ({ id: (exerciseIndex + 1) * 100 + setIndex, weight: previous[setIndex]?.weight ?? fallback.weight, reps: previous[setIndex]?.reps ?? fallback.reps, completed: false })) }
+    const registeredExercise = registeredExercises.find((exercise) => exercise.id === item.exerciseId)
+    const kind = item.kind ?? registeredExercise?.kind
+    return { id: exerciseIndex + 1, exerciseId: item.exerciseId, name: item.name, kind, prevSets: previous, sets: Array.from({ length: item.sets }, (_, setIndex) => ({ id: (exerciseIndex + 1) * 100 + setIndex, weight: kind === "自重" ? null : previous[setIndex]?.weight ?? null, reps: previous[setIndex]?.reps ?? 10, completed: false })) }
   })
 }
 
-export default function WorkoutScreen({ onBack, onSave, menu, restEnabled = true, restDuration = 90 }: { onBack: () => void; onSave: (added: AddedWorkoutExercise[]) => void; menu?: TrainingMenu; restEnabled?: boolean; restDuration?: number }) {
-  const initial = useRef(initialExercises(menu))
-  const [exercises, setExercises] = useState<Exercise[]>(initial.current)
+export default function WorkoutScreen({ onBack, onSave, menu, registeredExercises, saving, error, restEnabled = true, restDuration = 90 }: { onBack: () => void; onSave: (data: WorkoutSaveData) => Promise<boolean>; menu?: TrainingMenu; registeredExercises: RegisteredExercise[]; saving: boolean; error: string | null; restEnabled?: boolean; restDuration?: number }) {
+  const initial = useRef(initialExercises(menu, registeredExercises))
+  const startedAt = useRef(new Date().toISOString())
+  const [exercises, setExercises] = useState<WorkoutExercise[]>(initial.current)
   const [elapsed, setElapsed] = useState(0)
   const [restActive, setRestActive] = useState(false)
   const [restSeconds, setRestSeconds] = useState(90)
@@ -732,7 +737,7 @@ export default function WorkoutScreen({ onBack, onSave, menu, restEnabled = true
     [exercises, restDuration, restEnabled]
   )
 
-  const updateWeight = useCallback((exId: number, setId: number, v: number) => {
+  const updateWeight = useCallback((exId: number, setId: number, v: number | null) => {
     setExercises((prev) =>
       prev.map((ex) => {
         if (ex.id !== exId) return ex
@@ -761,9 +766,9 @@ export default function WorkoutScreen({ onBack, onSave, menu, restEnabled = true
       prev.map((ex) => {
         if (ex.id !== exId) return ex
         const last = ex.sets[ex.sets.length - 1]
-        const newSet: SetData = {
+        const newSet: WorkoutSet = {
           id: Date.now(),
-          weight: last?.weight ?? 0,
+          weight: ex.kind === "自重" ? null : last?.weight ?? null,
           reps: last?.reps ?? 0,
           completed: false,
         }
@@ -773,11 +778,11 @@ export default function WorkoutScreen({ onBack, onSave, menu, restEnabled = true
   }, [])
 
   const addExercise = () => {
-    const newEx: Exercise = {
+    const newEx: WorkoutExercise = {
       id: Date.now(),
       name: "",
       prevSets: [],
-      sets: [{ id: Date.now() + 1, weight: 0, reps: 0, completed: false }],
+      sets: [{ id: Date.now() + 1, weight: null, reps: 0, completed: false }],
     }
     setExercises((prev) => [...prev, newEx])
   }
@@ -797,18 +802,21 @@ export default function WorkoutScreen({ onBack, onSave, menu, restEnabled = true
   }
 
   const selectExercise = useCallback((exId: number, name: string, weight: number, reps: number) => {
+    const registeredExercise = registeredExercises.find((exercise) => exercise.name === name)
     setExercises((prev) => prev.map((exercise) => exercise.id === exId ? {
       ...exercise,
+      exerciseId: registeredExercise?.id,
       name,
+      kind: registeredExercise?.kind,
       prevSets: [],
-      sets: exercise.sets.map((set) => ({ ...set, weight, reps })),
+      sets: exercise.sets.map((set) => ({ ...set, weight: registeredExercise?.kind === "自重" ? null : weight, reps })),
     } : exercise))
-  }, [])
+  }, [registeredExercises])
 
   const restPadding = restActive ? 130 : 0
 
   if (ending) {
-    return <TrainingEndScreen exercises={exercises} initialExerciseIds={new Set(initial.current.map((exercise) => exercise.id))} menuName={menu?.name ?? "トレーニング"} elapsed={elapsed} onReturn={() => setEnding(false)} onSave={onSave} />
+    return <TrainingEndScreen exercises={exercises} initialExerciseIds={new Set(initial.current.map((exercise) => exercise.id))} menuName={menu?.name ?? "トレーニング"} startedAt={startedAt.current} elapsed={elapsed} saving={saving} error={error} onReturn={() => setEnding(false)} onSave={onSave} />
   }
 
   return (
@@ -943,8 +951,8 @@ export default function WorkoutScreen({ onBack, onSave, menu, restEnabled = true
               onRepsChange={updateReps}
               onAddSet={addSet}
               onSelectExercise={selectExercise}
-              onDragStart={() => setDragExerciseId(exercise.id)}
-              onDrop={() => moveExercise(exercise.id)}
+              onDragStart={() => setDragExerciseId(ex.id)}
+              onDrop={() => moveExercise(ex.id)}
             />
           ))}
 

@@ -1,8 +1,8 @@
 import { useState } from "react"
+import type { User } from "@supabase/supabase-js"
+import type { Workspace } from "./workspace"
 
-type Workspace = { id: number; name: string; type: "個人" | "チーム" }
-
-export default function SettingsScreen({ onHome, onQuick, onHistory, onMenuEditor, onExerciseManager, onCreateTeam, onWorkspaceManager, tendency, onTendency, workspaces, currentWorkspaceId, onSelectWorkspace, restEnabled, onRestEnabled, restSeconds, onRestSeconds }: { onHome: () => void; onQuick: () => void; onHistory: () => void; onMenuEditor: () => void; onExerciseManager: () => void; onCreateTeam: () => void; onWorkspaceManager: () => void; tendency: string; onTendency: (value: string) => void; workspaces: Workspace[]; currentWorkspaceId: number; onSelectWorkspace: (id: number) => void; restEnabled: boolean; onRestEnabled: (value: boolean) => void; restSeconds: number; onRestSeconds: (value: number) => void }) {
+export default function SettingsScreen({ onHome, onQuick, onHistory, onMenuEditor, onExerciseManager, onCreateTeam, onWorkspaceManager, tendency, onTendency, workspaces, currentWorkspaceId, onSelectWorkspace, restEnabled, onRestEnabled, restSeconds, onRestSeconds, user, onSignOut }: { onHome: () => void; onQuick: () => void; onHistory: () => void; onMenuEditor: () => void; onExerciseManager: () => void; onCreateTeam: () => void; onWorkspaceManager: () => void; tendency: string; onTendency: (value: string) => void; workspaces: Workspace[]; currentWorkspaceId: Workspace["id"]; onSelectWorkspace: (id: Workspace["id"]) => void; restEnabled: boolean; onRestEnabled: (value: boolean) => void; restSeconds: number; onRestSeconds: (value: number) => void; user: User; onSignOut: () => Promise<void> }) {
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const currentWorkspace = workspaces.find((workspace) => workspace.id === currentWorkspaceId) ?? workspaces[0]
 
@@ -10,7 +10,7 @@ export default function SettingsScreen({ onHome, onQuick, onHistory, onMenuEdito
     <div style={{ flex: 1, overflowY: "auto", padding: "48px 24px 108px" }}>
       <p style={eyebrowStyle}>SETTINGS</p><h1 style={{ fontFamily: "Outfit", fontSize: 25, fontWeight: 700, marginBottom: 28 }}>設定</h1>
 
-      <Section title="プロフィール"><div style={profileStyle}><div style={avatarStyle}>田</div><div><p style={{ fontFamily: "Outfit", fontSize: 16, fontWeight: 700, marginBottom: 4 }}>田中 太郎</p><p style={{ color: "#777", fontSize: 12 }}>tanaka@example.com</p></div></div></Section>
+      <Section title="プロフィール"><div style={profileStyle}><div style={avatarStyle}>{user.email?.slice(0, 1).toUpperCase() ?? "U"}</div><div style={{ flex: 1 }}><p style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{user.email ?? "メール未設定"}</p><p style={{ color: "#777", fontSize: 11, wordBreak: "break-all" }}>ID: {user.id}</p></div><button onClick={() => void onSignOut()} style={signOutStyle}>ログアウト</button></div></Section>
 
       <Section title="トレーニング"><div style={rowStyle}><div><p style={rowTitleStyle}>休憩タイマー</p><p style={detailStyle}>セット完了後に自動で開始</p></div><button onClick={() => onRestEnabled(!restEnabled)} aria-label={`休憩タイマー ${restEnabled ? "ON" : "OFF"}`} style={{ ...switchStyle, background: restEnabled ? "#c8ff00" : "#333" }}><i style={{ ...knobStyle, marginLeft: restEnabled ? 19 : 0, background: restEnabled ? "#0d0d0d" : "#aaa" }} /></button></div><div style={{ ...rowStyle, borderTop: "1px solid #282828" }}><div><p style={rowTitleStyle}>休憩時間</p><p style={detailStyle}>初期値</p></div><div style={{ display: "flex", alignItems: "center", gap: 8, opacity: restEnabled ? 1 : .4 }}><button disabled={!restEnabled} onClick={() => onRestSeconds(Math.max(10, restSeconds - 10))} style={restStepStyle}>−</button><span style={{ width: 43, textAlign: "center", fontFamily: "Outfit", fontSize: 16, fontWeight: 700 }}>{restSeconds}秒</span><button disabled={!restEnabled} onClick={() => onRestSeconds(restSeconds + 10)} style={restStepStyle}>＋</button></div></div><div style={{ padding: "16px" }}><p style={rowTitleStyle}>トレーニング傾向</p><p style={{ ...detailStyle, marginTop: 4, marginBottom: 13 }}>よく行うトレーニング</p><div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 7 }}>{["自重中心", "器具中心", "両方"].map((item) => <button key={item} onClick={() => onTendency(item)} style={{ ...tendencyStyle, borderColor: tendency === item ? "#c8ff00" : "#333", background: tendency === item ? "#1b2500" : "#202020", color: tendency === item ? "#c8ff00" : "#999" }}>{item}</button>)}</div></div></Section>
 
@@ -35,6 +35,7 @@ const labelStyle = { color: "#777", fontSize: 11, fontWeight: 500, letterSpacing
 const sectionStyle = { border: "1px solid #2a2a2a", borderRadius: 14, background: "#171717", overflow: "hidden" } as const
 const profileStyle = { display: "flex", alignItems: "center", gap: 13, padding: "16px" } as const
 const avatarStyle = { width: 40, height: 40, display: "grid", placeItems: "center", borderRadius: "50%", background: "#202020", border: "1px solid #333", color: "#aaa", fontFamily: "Outfit", fontWeight: 700 } as const
+const signOutStyle = { padding: "8px 9px", border: "1px solid #493030", borderRadius: 8, background: "transparent", color: "#e99", fontFamily: "Inter", fontSize: 11, cursor: "pointer" } as const
 const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: "16px", background: "transparent", border: "none", color: "#f0f0f0" } as const
 const rowTitleStyle = { fontFamily: "Outfit", fontSize: 15, fontWeight: 600 } as const
 const detailStyle = { color: "#777", fontSize: 12, marginTop: 4 } as const
