@@ -5,16 +5,17 @@ export type GrowthPhoto = { id: string; ownerId: string; owner: string; workspac
 export type GrowthPhotoDraft = { file: File; visibility: GrowthVisibility; note: string }
 type Member = { id: string; name: string; color: string }
 
-export default function GrowthScreen({ teamId, currentUserId, members, photos, loading, saving, error, onBack, onSave, onUpdate, onDelete }: { teamId?: string; currentUserId: string; members: Member[]; photos: GrowthPhoto[]; loading: boolean; saving: boolean; error: string | null; onBack: () => void; onSave: (draft: GrowthPhotoDraft) => Promise<boolean>; onUpdate: (photo: GrowthPhoto, changes: { visibility: GrowthVisibility; note: string }) => Promise<boolean>; onDelete: (photo: GrowthPhoto) => Promise<boolean> }) {
+export default function GrowthScreen({ teamId, currentUserId, members, photos, memberFilter, onMemberFilterChange, loading, saving, error, onBack, onSave, onUpdate, onDelete }: { teamId?: string; currentUserId: string; members: Member[]; photos: GrowthPhoto[]; memberFilter?: string[]; onMemberFilterChange?: (ids: string[]) => void; loading: boolean; saving: boolean; error: string | null; onBack: () => void; onSave: (draft: GrowthPhotoDraft) => Promise<boolean>; onUpdate: (photo: GrowthPhoto, changes: { visibility: GrowthVisibility; note: string }) => Promise<boolean>; onDelete: (photo: GrowthPhoto) => Promise<boolean> }) {
   const [view, setView] = useState<"list" | "calendar">("list")
   const [filter, setFilter] = useState<string | "all">("all")
   const [selected, setSelected] = useState<GrowthPhoto | undefined>()
   const [day, setDay] = useState<string | undefined>()
   const [adding, setAdding] = useState(false)
-  const visible = photos.filter((photo) => filter === "all" || photo.ownerId === filter)
+  const selectedMembers = memberFilter ?? (filter === "all" ? [] : [filter])
+  const visible = photos.filter((photo) => selectedMembers.length === 0 || selectedMembers.includes(photo.ownerId))
 
   return <main style={page}><div style={content}><header style={header}><button onClick={onBack} disabled={saving} style={back}>‹</button><div style={{ flex: 1 }}><p style={eyebrow}>GROWTH</p><h1 style={title}>成長記録</h1></div><button onClick={() => setAdding(true)} disabled={saving} style={{ ...add, opacity: saving ? .5 : 1 }}>＋ 写真</button></header><div style={body}>
-    {teamId && <div style={chips}><button onClick={() => setFilter("all")} style={{ ...chip, ...active(filter === "all") }}>全員</button>{members.map((member) => <button key={member.id} onClick={() => setFilter(member.id)} style={{ ...chip, ...active(filter === member.id) }}><i style={{ ...dot, background: member.color }} />{member.name}</button>)}</div>}
+    {teamId && <div style={chips}><button onClick={() => onMemberFilterChange ? onMemberFilterChange([]) : setFilter("all")} style={{ ...chip, ...active(selectedMembers.length === 0) }}>全員</button>{members.map((member) => <button key={member.id} onClick={() => { if (onMemberFilterChange) onMemberFilterChange(selectedMembers.includes(member.id) ? selectedMembers.filter((id) => id !== member.id) : [...selectedMembers, member.id]); else setFilter(member.id) }} style={{ ...chip, ...active(selectedMembers.includes(member.id)) }}><i style={{ ...dot, background: member.color }} />{member.name}</button>)}</div>}
     <div style={tabs}><button onClick={() => setView("list")} style={{ ...tab, color: view === "list" ? "#c8ff00" : "#777", borderBottomColor: view === "list" ? "#c8ff00" : "transparent" }}>一覧</button><button onClick={() => setView("calendar")} style={{ ...tab, color: view === "calendar" ? "#c8ff00" : "#777", borderBottomColor: view === "calendar" ? "#c8ff00" : "transparent" }}>カレンダー</button></div>
     {error && <p role="alert" style={errorStyle}>{error}</p>}
     {loading ? <p style={empty}>読み込み中...</p> : view === "list" ? <PhotoList photos={visible} onSelect={setSelected} /> : <PhotoCalendar photos={visible} members={members} onDay={setDay} />}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import type { User } from "@supabase/supabase-js"
 import LoginScreen from "./LoginScreen"
 import { supabase } from "./lib/supabase"
@@ -47,6 +47,15 @@ function uniqueWorkspaces(workspaces: Workspace[]) {
   const byId = new Map<string, Workspace>()
   for (const workspace of workspaces) if (!byId.has(workspace.id)) byId.set(workspace.id, workspace)
   return [...byId.values()]
+}
+
+async function loadProfileDisplayNames(userIds: string[]) {
+  const ids = [...new Set(userIds)]
+  if (!ids.length) return new Map<string, string>()
+
+  const { data, error } = await supabase.from("profiles").select("id, display_name").in("id", ids)
+  if (error) throw error
+  return new Map((data ?? []).map((profile) => [profile.id, profile.display_name]))
 }
 
 function createStorageObjectId() {
@@ -465,6 +474,9 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord }: { open: b
 }
 
 type Tab = "home" | "history"
+type RecentTeamActivity =
+  | { kind: "training"; id: string; memberId: string; member: string; when: string; timestamp: string; exercise: string; reps: number; weight?: number }
+  | { kind: "photo"; id: string; memberId: string; member: string; when: string; timestamp: string; photo: GrowthPhoto }
 
 function invitationErrorMessage(error: { message?: string } | null, fallback: string) {
   const message = error?.message?.toLowerCase() ?? ""
@@ -486,7 +498,8 @@ export default function App() {
   const [profileRefresh, setProfileRefresh] = useState(0)
   const [screen, setScreen] = useState<"home" | "workout" | "quick-record" | "history" | "menu-list" | "menu-editor" | "exercise-manager" | "team-create" | "team-member" | "team-manage" | "workspace-manager" | "growth" | "settings">("home")
   const [activeTab, setActiveTab] = useState<Tab>("home")
-  const [wsIndex, setWsIndex] = useState(0)
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
+  const [managedTeamWorkspaceId, setManagedTeamWorkspaceId] = useState<string | null>(null)
   const [workspaces, setWorkspaces] = useState(INITIAL_WORKSPACES)
   const [workspaceLoading, setWorkspaceLoading] = useState(true)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
@@ -519,6 +532,7 @@ export default function App() {
   const [activityFilter, setActivityFilter] = useState<string[]>([])
   const [selectedActivityDay, setSelectedActivityDay] = useState<number | null>(null)
   const [teamMembers, setTeamMembers] = useState(INITIAL_TEAM_MEMBERS)
+  const [teamMembersWorkspaceId, setTeamMembersWorkspaceId] = useState<string | null>(null)
   const [growthPhotos, setGrowthPhotos] = useState<GrowthPhoto[]>([])
   const [growthPhotoLoading, setGrowthPhotoLoading] = useState(false)
   const [growthPhotoSaving, setGrowthPhotoSaving] = useState(false)
@@ -534,6 +548,76 @@ export default function App() {
   const [incomingInvitations, setIncomingInvitations] = useState<IncomingInvitation[]>([])
   const [acceptingInvitationId, setAcceptingInvitationId] = useState<string | null>(null)
   const [incomingInvitationError, setIncomingInvitationError] = useState<string | null>(null)
+  const authenticatedUserIdRef = useRef<string | null>(null)
+  const authEventVersionRef = useRef(0)
+
+  const resetUserScopedState = useCallback(() => {
+    setOnboarding(null)
+    setProfileLoading(false)
+    setProfileSaving(false)
+    setProfileError(null)
+    setOnboardingError(null)
+    setProfileExists(false)
+    setScreen("home")
+    setActiveTab("home")
+    setCurrentWorkspaceId(null)
+    setManagedTeamWorkspaceId(null)
+    setWorkspaces([])
+    setWorkspaceLoading(true)
+    setWorkspaceError(null)
+    setWsMenuOpen(false)
+    setTrainingTendency("両方")
+    setRestEnabled(true)
+    setRestSeconds(90)
+    setStartPressed(false)
+    setSheetOpen(false)
+    setMenuPressedOpen(false)
+    setMenus([])
+    setMenuLoading(false)
+    setMenuSaving(false)
+    setMenuError(null)
+    setHistoryRecords([])
+    setHistoryLoading(false)
+    setHistoryError(null)
+    setWorkoutSaving(false)
+    setWorkoutSaveError(null)
+    setRegisteredExercises([])
+    setExerciseLoading(false)
+    setExerciseSaving(false)
+    setExerciseError(null)
+    setEditingMenu(undefined)
+    setWorkoutMenu(undefined)
+    setMenuListBack("settings")
+    setSelectedMember(undefined)
+    setSelectedTeamId(undefined)
+    setActivityFilter([])
+    setSelectedActivityDay(null)
+    setTeamMembers([])
+    setTeamMembersWorkspaceId(null)
+    setGrowthPhotos([])
+    setGrowthPhotoLoading(false)
+    setGrowthPhotoSaving(false)
+    setGrowthPhotoError(null)
+    setSharedRecords([])
+    setTeamCreating(false)
+    setTeamCreateError(null)
+    setTeamRoleSaving(false)
+    setTeamRoleError(null)
+    setTeamInvitations([])
+    setTeamInvitationSaving(false)
+    setTeamInvitationError(null)
+    setIncomingInvitations([])
+    setAcceptingInvitationId(null)
+    setIncomingInvitationError(null)
+  }, [])
+
+  const synchronizeAuthenticatedUser = useCallback((nextUser: User | null) => {
+    const nextUserId = nextUser?.id ?? null
+    if (authenticatedUserIdRef.current !== nextUserId) resetUserScopedState()
+    authenticatedUserIdRef.current = nextUserId
+    setUser(nextUser)
+    setAuthLoading(false)
+  }, [resetUserScopedState])
 
   const loadMenus = useCallback(async () => {
     if (!user) {
@@ -541,6 +625,7 @@ export default function App() {
       setMenuLoading(false)
       return false
     }
+    if (authenticatedUserIdRef.current !== user.id) return false
 
     setMenuLoading(true)
     setMenuError(null)
@@ -551,6 +636,7 @@ export default function App() {
       .is("deleted_at", null)
       .order("created_at", { ascending: true })
 
+    if (authenticatedUserIdRef.current !== user.id) return false
     setMenuLoading(false)
     if (error) {
       setMenuError("メニューを読み込めませんでした。通信を確認して再試行してください。")
@@ -591,6 +677,7 @@ export default function App() {
       setHistoryLoading(false)
       return false
     }
+    if (authenticatedUserIdRef.current !== user.id) return false
 
     setHistoryLoading(true)
     setHistoryError(null)
@@ -601,6 +688,7 @@ export default function App() {
       .is("deleted_at", null)
       .order("started_at", { ascending: false })
 
+    if (authenticatedUserIdRef.current !== user.id) return false
     setHistoryLoading(false)
     if (error) {
       console.error("Workout history load failed:", error)
@@ -679,21 +767,20 @@ export default function App() {
     let active = true
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!active) return
-      setUser(session?.user ?? null)
-      setAuthLoading(false)
+      if (!active || authEventVersionRef.current !== 0) return
+      synchronizeAuthenticatedUser(session?.user ?? null)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      setAuthLoading(false)
+      authEventVersionRef.current += 1
+      synchronizeAuthenticatedUser(session?.user ?? null)
     })
 
     return () => {
       active = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [synchronizeAuthenticatedUser])
 
   useEffect(() => {
     let active = true
@@ -736,7 +823,7 @@ export default function App() {
 
     if (!user) {
       setWorkspaces([])
-      setWsIndex(0)
+      setCurrentWorkspaceId(null)
       setWorkspaceLoading(true)
       setWorkspaceError(null)
       return () => { active = false }
@@ -756,6 +843,7 @@ export default function App() {
       const { data, error } = await supabase
         .from("workspace_members")
         .select("system_role, workspaces!inner(id, name, type)")
+        .eq("user_id", user.id)
         .is("left_at", null)
         .is("workspaces.deleted_at", null)
 
@@ -777,7 +865,7 @@ export default function App() {
       if (!loaded.some((workspace) => workspace.type === "個人")) throw new Error("Personal workspace missing")
       if (!active) return
       setWorkspaces(loaded)
-      setWsIndex((current) => Math.min(current, loaded.length - 1))
+      setCurrentWorkspaceId((current) => loaded.some((workspace) => workspace.id === current) ? current : loaded[0]?.id ?? null)
       setWorkspaceLoading(false)
     }
 
@@ -844,8 +932,9 @@ export default function App() {
           id: share.id,
           teamId: share.workspace_id,
           memberId: session.owner_id,
-          member: session.owner_id === user.id ? "自分" : "メンバー",
+          member: session.owner_id,
           when: new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(performedAt),
+          timestamp: session.started_at,
           exercise: firstExercise?.exercise_name_snapshot ?? "トレーニング",
           weight: firstSet?.weight_kg === null || firstSet?.weight_kg === undefined ? undefined : Number(firstSet.weight_kg),
           reps: Number(firstSet?.reps ?? 0),
@@ -854,17 +943,25 @@ export default function App() {
         } satisfies SharedRecord]
       })
 
-      if (active) setSharedRecords(records)
+      const displayNames = await loadProfileDisplayNames(records.map((record) => record.memberId))
+      if (active) setSharedRecords(records.map((record) => ({ ...record, member: displayNames.get(record.memberId) ?? record.memberId })))
     }
 
     void loadSharedRecords().catch((error) => console.error("Shared activity load failed:", error))
     return () => { active = false }
   }, [user?.id, workspaces])
 
-  const loadTeamMembers = useCallback(async () => {
-    const current = workspaces[wsIndex]
-    if (!user || !current || current.type !== "チーム") {
+  const loadTeamMembers = useCallback(async (workspaceId = currentWorkspaceId) => {
+    const current = workspaces.find((workspace) => workspace.id === workspaceId)
+    if (!user) {
       setTeamMembers([])
+      setTeamMembersWorkspaceId(null)
+      return
+    }
+    if (authenticatedUserIdRef.current !== user.id) return
+    if (!current || current.type !== "チーム") {
+      setTeamMembers([])
+      setTeamMembersWorkspaceId(null)
       return
     }
 
@@ -875,22 +972,36 @@ export default function App() {
       .is("left_at", null)
     if (error) throw error
 
-    setTeamMembers((data ?? []).map((member) => ({
+    const members = data ?? []
+    let displayNames = new Map<string, string>()
+    try {
+      displayNames = await loadProfileDisplayNames(members.map((member) => member.user_id))
+    } catch (profileError) {
+      console.error("Team member profile load failed:", profileError)
+    }
+    if (authenticatedUserIdRef.current !== user.id) return
+    setTeamMembers(members.map((member) => ({
       id: member.user_id,
-      name: member.user_id === user.id ? "自分" : "メンバー",
+      name: displayNames.get(member.user_id) ?? member.user_id,
       systemRole: member.system_role === "owner" ? "Owner" : member.system_role === "admin" ? "Admin" : "Member",
       weeklyCount: sharedRecords.filter((record) => record.teamId === current.id && record.memberId === member.user_id).length,
       recent: "",
     } satisfies TeamMember)))
-  }, [user, workspaces, wsIndex, sharedRecords])
+    setTeamMembersWorkspaceId(current.id)
+  }, [user, workspaces, currentWorkspaceId, sharedRecords])
 
   useEffect(() => {
     void loadTeamMembers().catch((error) => console.error("Team member load failed:", error))
   }, [loadTeamMembers])
 
-  const loadTeamInvitations = useCallback(async () => {
-    const current = workspaces[wsIndex]
-    if (!user || !current || current.type !== "チーム") {
+  const loadTeamInvitations = useCallback(async (workspaceId = currentWorkspaceId) => {
+    const current = workspaces.find((workspace) => workspace.id === workspaceId)
+    if (!user) {
+      setTeamInvitations([])
+      return
+    }
+    if (authenticatedUserIdRef.current !== user.id) return
+    if (!current || current.type !== "チーム") {
       setTeamInvitations([])
       return
     }
@@ -899,9 +1010,13 @@ export default function App() {
       .from("workspace_invitations")
       .select("id, workspace_id, invited_email, created_at, expires_at, accepted_at, revoked_at")
       .eq("workspace_id", current.id)
+      .is("accepted_at", null)
+      .is("revoked_at", null)
+      .gt("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })
     if (error) throw error
 
+    if (authenticatedUserIdRef.current !== user.id) return
     setTeamInvitations((data ?? []).map((invitation) => ({
       id: invitation.id,
       workspaceId: invitation.workspace_id,
@@ -911,7 +1026,7 @@ export default function App() {
       acceptedAt: invitation.accepted_at,
       revokedAt: invitation.revoked_at,
     } satisfies TeamInvitation)))
-  }, [user, workspaces, wsIndex])
+  }, [user, workspaces, currentWorkspaceId])
 
   useEffect(() => {
     void loadTeamInvitations().catch((error) => console.error("Team invitation load failed:", error))
@@ -922,13 +1037,18 @@ export default function App() {
       setIncomingInvitations([])
       return
     }
+    if (authenticatedUserIdRef.current !== user.id) return
 
     const { data, error } = await supabase
       .from("workspace_invitations")
       .select("id, expires_at, accepted_at, revoked_at, workspaces(name)")
+      .is("accepted_at", null)
+      .is("revoked_at", null)
+      .gt("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })
     if (error) throw error
 
+    if (authenticatedUserIdRef.current !== user.id) return
     type IncomingInvitationRow = { id: string; expires_at: string; accepted_at: string | null; revoked_at: string | null; workspaces: { name: string } | { name: string }[] | null }
     setIncomingInvitations(((data ?? []) as IncomingInvitationRow[]).map((invitation) => {
       const workspace = Array.isArray(invitation.workspaces) ? invitation.workspaces[0] : invitation.workspaces
@@ -947,8 +1067,14 @@ export default function App() {
   }, [loadIncomingInvitations])
 
   const loadGrowthPhotos = useCallback(async () => {
-    const current = workspaces[wsIndex]
-    if (!user || !current) {
+    const current = workspaces.find((workspace) => workspace.id === currentWorkspaceId)
+    if (!user) {
+      setGrowthPhotos([])
+      setGrowthPhotoLoading(false)
+      return false
+    }
+    if (authenticatedUserIdRef.current !== user.id) return false
+    if (!current) {
       setGrowthPhotos([])
       setGrowthPhotoLoading(false)
       return false
@@ -966,6 +1092,7 @@ export default function App() {
     else query = query.eq("owner_id", user.id).is("workspace_id", null)
 
     const { data, error } = await query
+    if (authenticatedUserIdRef.current !== user.id) return false
     if (error) {
       setGrowthPhotoLoading(false)
       setGrowthPhotoError("成長記録を読み込めませんでした。通信を確認して再試行してください。")
@@ -974,14 +1101,21 @@ export default function App() {
 
     type BodyPhotoRow = { id: string; owner_id: string; workspace_id: string | null; visibility: "private" | "team"; taken_at: string; note: string | null; storage_path: string }
     try {
-      const photos = await Promise.all(((data ?? []) as BodyPhotoRow[]).map(async (photo) => {
+      const photoRows = (data ?? []) as BodyPhotoRow[]
+      let displayNames = new Map<string, string>()
+      try {
+        displayNames = await loadProfileDisplayNames(photoRows.map((photo) => photo.owner_id))
+      } catch (profileError) {
+        console.error("Growth photo profile load failed:", profileError)
+      }
+      const photos = await Promise.all(photoRows.map(async (photo) => {
         const { data: signedUrl, error: signedUrlError } = await supabase.storage.from("body-photos").createSignedUrl(photo.storage_path, 60 * 60)
         if (signedUrlError || !signedUrl?.signedUrl) throw signedUrlError ?? new Error("Signed URL missing")
         const takenAt = new Date(photo.taken_at)
         return {
           id: photo.id,
           ownerId: photo.owner_id,
-          owner: photo.owner_id === user.id ? "自分" : "メンバー",
+          owner: displayNames.get(photo.owner_id) ?? photo.owner_id,
           workspaceId: photo.workspace_id,
           visibility: photo.visibility,
           takenAt: photo.taken_at,
@@ -992,16 +1126,18 @@ export default function App() {
           imageUrl: signedUrl.signedUrl,
         } satisfies GrowthPhoto
       }))
+      if (authenticatedUserIdRef.current !== user.id) return false
       setGrowthPhotos(photos)
       setGrowthPhotoLoading(false)
       return true
     } catch (signedUrlError) {
+      if (authenticatedUserIdRef.current !== user.id) return false
       console.error("Body photo signed URL load failed:", signedUrlError)
       setGrowthPhotoLoading(false)
       setGrowthPhotoError("写真を表示できませんでした。もう一度お試しください。")
       return false
     }
-  }, [user, workspaces, wsIndex])
+  }, [user, workspaces, currentWorkspaceId])
 
   useEffect(() => {
     void loadGrowthPhotos()
@@ -1062,8 +1198,11 @@ export default function App() {
   if (workspaceLoading) return <main style={{ minHeight: "100vh", background: "#0d0d0d" }} />
   if (workspaceError) return <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "#0d0d0d", color: "#f0f0f0" }}><div style={{ maxWidth: 360 }}><p style={{ color: "#f09a9a", fontSize: 14, lineHeight: 1.6 }}>{workspaceError}</p><button onClick={() => setWorkspaceRefresh((value) => value + 1)} style={{ marginTop: 18, padding: "11px 14px", border: "1px solid #3a3a3a", borderRadius: 8, background: "#202020", color: "#c8ff00", cursor: "pointer" }}>再試行</button></div></main>
 
-  const currentWorkspace = workspaces[wsIndex]
+  const currentWorkspace = workspaces.find((workspace) => workspace.id === currentWorkspaceId) ?? workspaces[0]
   const currentTeamWorkspace = currentWorkspace?.type === "チーム" ? currentWorkspace : undefined
+  const managedWorkspace = workspaces.find((workspace) => workspace.id === managedTeamWorkspaceId)
+  const managedTeamWorkspace = managedWorkspace?.type === "チーム" ? managedWorkspace : undefined
+  const canManageManagedTeam = managedTeamWorkspace?.systemRole === "owner" || managedTeamWorkspace?.systemRole === "admin"
   if (!currentWorkspace) return <main style={{ minHeight: "100vh", background: "#0d0d0d" }} />
 
   const saveGrowthPhoto = async (draft: GrowthPhotoDraft) => {
@@ -1660,7 +1799,7 @@ export default function App() {
       }
 
       setWorkspaces((current) => uniqueWorkspaces([...current, { id: String(workspace.id), name: workspace.name, type: "チーム", systemRole: "owner" }]))
-      setWsIndex(workspaces.length)
+      setCurrentWorkspaceId(String(workspace.id))
       setScreen("home")
       return true
     }} />
@@ -1668,23 +1807,55 @@ export default function App() {
   if (screen === "team-member" && selectedMember) {
     return <TeamMemberScreen member={selectedMember} records={sharedRecords.filter((record) => record.teamId === selectedTeamId)} onBack={() => setScreen("home")} />
   }
-  if (screen === "team-manage") return <TeamManageScreen teamName={currentTeamWorkspace?.name ?? "チーム"} members={teamMembers} records={sharedRecords.filter((record) => record.teamId === currentTeamWorkspace?.id)} invitations={teamInvitations} currentRole={currentTeamWorkspace?.systemRole === "owner" ? "Owner" : currentTeamWorkspace?.systemRole === "admin" ? "Admin" : "Member"} saving={teamRoleSaving} error={teamRoleError} invitationSaving={teamInvitationSaving} invitationError={teamInvitationError} onBack={() => { setTeamRoleError(null); setTeamInvitationError(null); setScreen("workspace-manager") }} onRoleChange={async (id, systemRole) => {
-    if (!currentTeamWorkspace) return false
+  if (screen === "team-manage") return <TeamManageScreen teamName={managedTeamWorkspace?.name ?? "チーム"} members={teamMembersWorkspaceId === managedTeamWorkspace?.id ? teamMembers : []} records={sharedRecords.filter((record) => record.teamId === managedTeamWorkspace?.id)} photos={growthPhotos.filter((photo) => photo.workspaceId === managedTeamWorkspace?.id && photo.visibility === "team")} photosLoading={growthPhotoLoading} invitations={teamInvitations} currentUserId={user.id} currentRole={managedTeamWorkspace?.systemRole === "owner" ? "Owner" : managedTeamWorkspace?.systemRole === "admin" ? "Admin" : "Member"} saving={teamRoleSaving} error={teamRoleError} invitationSaving={teamInvitationSaving} invitationError={teamInvitationError} onBack={() => { setManagedTeamWorkspaceId(null); setTeamRoleError(null); setTeamInvitationError(null); setScreen("workspace-manager") }} onRoleChange={async (id, systemRole) => {
+    const targetWorkspaceId = managedTeamWorkspace?.id
+    if (!targetWorkspaceId || currentWorkspaceId !== targetWorkspaceId) {
+      setTeamRoleError("Ownerのみ権限を変更できます。")
+      return false
+    }
+
+    const { data: { user: authenticatedUser }, error: authenticatedUserError } = await supabase.auth.getUser()
+    if (authenticatedUserError || !authenticatedUser) {
+      setTeamRoleError("ログイン状態を確認できませんでした。もう一度ログインしてください。")
+      return false
+    }
+    if (authenticatedUser.id !== user.id) {
+      synchronizeAuthenticatedUser(authenticatedUser)
+      return false
+    }
+    if (id === authenticatedUser.id) {
+      setTeamRoleError("Owner自身の権限は変更できません。")
+      return false
+    }
+
+    const { data: membership, error: membershipError } = await supabase
+      .from("workspace_members")
+      .select("system_role")
+      .eq("workspace_id", targetWorkspaceId)
+      .eq("user_id", authenticatedUser.id)
+      .is("left_at", null)
+      .maybeSingle()
+    if (membershipError || membership?.system_role !== "owner") {
+      console.error("Team role authorization check failed:", { membershipError, targetWorkspaceId, targetUserId: id, currentUserId: authenticatedUser.id })
+      setTeamRoleError("Ownerのみ権限を変更できます。")
+      return false
+    }
+
     setTeamRoleSaving(true)
     setTeamRoleError(null)
     const { error } = await supabase.rpc("update_team_member_role", {
-      target_workspace_id: currentTeamWorkspace.id,
+      target_workspace_id: targetWorkspaceId,
       target_user_id: id,
       new_role: systemRole.toLowerCase(),
     })
     if (error) {
-      console.error("Team member role update failed:", error)
+      console.error("Team member role update failed:", { error, targetWorkspaceId, targetUserId: id, currentUserId: user.id, currentWorkspaceId, managedTeamWorkspaceId })
       setTeamRoleSaving(false)
       setTeamRoleError("権限を変更できませんでした。もう一度お試しください。")
       return false
     }
     try {
-      await loadTeamMembers()
+      await loadTeamMembers(targetWorkspaceId)
       setTeamRoleSaving(false)
       return true
     } catch (loadError) {
@@ -1694,11 +1865,14 @@ export default function App() {
       return false
     }
   }} onCreateInvitation={async (email) => {
-    if (!currentTeamWorkspace) return false
+    if (!managedTeamWorkspace || !canManageManagedTeam) {
+      setTeamInvitationError("OwnerまたはAdminのみ招待できます。")
+      return false
+    }
     setTeamInvitationSaving(true)
     setTeamInvitationError(null)
     const { error } = await supabase.rpc("create_team_invitation", {
-      target_workspace_id: currentTeamWorkspace.id,
+      target_workspace_id: managedTeamWorkspace.id,
       invitee_email: email,
     })
     if (error) {
@@ -1708,7 +1882,7 @@ export default function App() {
       return false
     }
     try {
-      await loadTeamInvitations()
+      await loadTeamInvitations(managedTeamWorkspace.id)
       setTeamInvitationSaving(false)
       return true
     } catch (loadError) {
@@ -1718,6 +1892,10 @@ export default function App() {
       return false
     }
   }} onRevokeInvitation={async (id) => {
+    if (!canManageManagedTeam) {
+      setTeamInvitationError("OwnerまたはAdminのみ招待を取り消せます。")
+      return false
+    }
     setTeamInvitationSaving(true)
     setTeamInvitationError(null)
     const { error } = await supabase.rpc("revoke_team_invitation", { invitation_id: id })
@@ -1728,7 +1906,7 @@ export default function App() {
       return false
     }
     try {
-      await loadTeamInvitations()
+      await loadTeamInvitations(managedTeamWorkspace?.id)
       setTeamInvitationSaving(false)
       return true
     } catch (loadError) {
@@ -1738,10 +1916,10 @@ export default function App() {
       return false
     }
   }} onRemoveRecord={(id) => setSharedRecords((current) => current.filter((record) => record.id !== id))} />
-  if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setWsIndex(workspaces.findIndex((workspace) => workspace.id === id)); setScreen("home") }} onRename={(id, name) => setWorkspaces((current) => current.map((workspace) => workspace.id === id ? { ...workspace, name } : workspace))} onExit={(id) => { setWorkspaces((current) => current.filter((workspace) => workspace.id !== id)); setWsIndex(0) }} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setWsIndex(workspaces.findIndex((workspace) => workspace.id === id)); setScreen("team-manage") }} />
-  if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onSave={saveGrowthPhoto} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
+  if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setCurrentWorkspaceId(id); setScreen("home") }} onRename={async (id, name) => { const workspace = workspaces.find((item) => item.id === id); if (!workspace) return false; const { data, error } = await supabase.from("workspaces").update({ name }).eq("id", id).select("id").single(); if (error || !data) { console.error("Workspace rename failed:", error ?? "Workspace not updated"); return false } setWorkspaces((current) => current.map((item) => item.id === id ? { ...item, name } : item)); return true }} onExit={(id) => { setWorkspaces((current) => current.filter((workspace) => workspace.id !== id)); setCurrentWorkspaceId((current) => current === id ? workspaces.find((workspace) => workspace.id !== id)?.id ?? null : current) }} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setTeamMembers([]); setTeamMembersWorkspaceId(null); setTeamInvitations([]); setCurrentWorkspaceId(id); setManagedTeamWorkspaceId(id); void loadTeamMembers(id).catch((error) => console.error("Team member load failed:", error)); setScreen("team-manage") }} />
+  if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} memberFilter={currentTeamWorkspace ? activityFilter : undefined} onMemberFilterChange={currentTeamWorkspace ? setActivityFilter : undefined} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onSave={saveGrowthPhoto} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
   if (screen === "settings") {
-    return <SettingsScreen onHome={() => setScreen("home")} onQuick={() => setScreen("quick-record")} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onCreateTeam={() => setScreen("team-create")} onWorkspaceManager={() => setScreen("workspace-manager")} tendency={trainingTendency} onTendency={setTrainingTendency} workspaces={workspaces} currentWorkspaceId={currentWorkspace.id} onSelectWorkspace={(id) => setWsIndex(workspaces.findIndex((workspace) => workspace.id === id))} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} onAcceptInvitation={async (id) => {
+    return <SettingsScreen onHome={() => setScreen("home")} onQuick={() => setScreen("quick-record")} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onCreateTeam={() => setScreen("team-create")} onWorkspaceManager={() => setScreen("workspace-manager")} tendency={trainingTendency} onTendency={setTrainingTendency} workspaces={workspaces} currentWorkspaceId={currentWorkspace.id} onSelectWorkspace={setCurrentWorkspaceId} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} onAcceptInvitation={async (id) => {
       setAcceptingInvitationId(id)
       setIncomingInvitationError(null)
       const { error } = await supabase.rpc("accept_team_invitation", { invitation_id: id })
@@ -1769,7 +1947,14 @@ export default function App() {
 
   const isTeamWorkspace = currentWorkspace.type === "チーム"
   const teamActivities = currentTeamWorkspace ? sharedRecords.filter((record) => record.teamId === currentTeamWorkspace.id) : []
+  const teamPhotos = currentTeamWorkspace ? growthPhotos.filter((photo) => photo.workspaceId === currentTeamWorkspace.id && photo.visibility === "team") : []
   const filteredActivities = activityFilter.length === 0 ? teamActivities : teamActivities.filter((record) => activityFilter.includes(record.memberId))
+  const filteredTeamPhotos = activityFilter.length === 0 ? teamPhotos : teamPhotos.filter((photo) => activityFilter.includes(photo.ownerId))
+  const recentActivities: RecentTeamActivity[] = [
+    ...teamActivities.map((record) => ({ kind: "training" as const, id: record.id, memberId: record.memberId, member: record.member, when: record.when, timestamp: record.timestamp ?? record.when, exercise: record.exercise, reps: record.reps, weight: record.weight })),
+    ...teamPhotos.map((photo) => ({ kind: "photo" as const, id: `photo-${photo.id}`, memberId: photo.ownerId, member: photo.owner, when: photo.dateLabel, timestamp: photo.takenAt, photo })),
+  ].sort((first, second) => second.timestamp.localeCompare(first.timestamp))
+  const filteredRecentActivities = activityFilter.length === 0 ? recentActivities : recentActivities.filter((activity) => activityFilter.includes(activity.memberId))
 
   return (
     <div
@@ -1838,7 +2023,7 @@ export default function App() {
                       letterSpacing: "-0.02em",
                     }}
                   >
-                    {workspaces[wsIndex].name}
+                    {currentWorkspace.name}
                   </span>
                   <svg
                     width="16"
@@ -1894,14 +2079,14 @@ export default function App() {
                   <button
                     key={ws.id}
                     onClick={() => {
-                      setWsIndex(i)
+                      setCurrentWorkspaceId(ws.id)
                       setWsMenuOpen(false)
                     }}
                     style={{
                       display: "flex",
                       width: "100%",
                       padding: "14px 16px",
-                      background: i === wsIndex ? "#202020" : "none",
+                      background: ws.id === currentWorkspace.id ? "#202020" : "none",
                       border: "none",
                       borderBottom:
                         i < workspaces.length - 1
@@ -1909,7 +2094,7 @@ export default function App() {
                           : "none",
                       textAlign: "left",
                       cursor: "pointer",
-                      color: i === wsIndex ? "#c8ff00" : "#bbb",
+                      color: ws.id === currentWorkspace.id ? "#c8ff00" : "#bbb",
                       fontFamily: "Inter",
                       fontSize: 14,
                       alignItems: "center",
@@ -1917,7 +2102,7 @@ export default function App() {
                     }}
                   >
                     <span>{ws.name}<small style={{ color: "#777", marginLeft: 7, fontSize: 10 }}>{ws.type}</small></span>
-                    {i === wsIndex && (
+                    {ws.id === currentWorkspace.id && (
                       <svg
                         width="14"
                         height="14"
@@ -2229,7 +2414,8 @@ export default function App() {
               <MiniCalendar activities={isTeamWorkspace ? teamActivities : undefined} filter={activityFilter} onDaySelect={setSelectedActivityDay} />
             </div>
           </div>
-          {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>最近の活動</p><button onClick={() => { setActiveTab("history"); setScreen("history") }} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>もっと見る</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredActivities.slice(0, 3).map((record, index) => <div key={record.id} style={{ padding: "14px 16px", borderBottom: index < Math.min(filteredActivities.length, 3) - 1 ? "1px solid #282828" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}><button onClick={() => openMember(teamMembers.find((member) => member.id === record.memberId)!)} style={{ padding: 0, border: "none", background: "transparent", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{record.member}</button><span style={{ color: "#777", fontFamily: "Inter", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>{record.when}</span></p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{record.exercise} · {record.weight ? `${record.weight}kg × ` : ""}{record.reps}回</p></div>)}</div></div>}
+          {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>最近の活動</p><button onClick={() => { setActiveTab("history"); setScreen("history") }} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>もっと見る</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredRecentActivities.slice(0, 3).map((activity, index) => activity.kind === "photo" ? <button key={activity.id} onClick={() => setScreen("growth")} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "10px 16px", border: "none", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><img src={activity.photo.imageUrl} alt="" style={{ width: 38, height: 48, borderRadius: 5, objectFit: "cover", background: "#202020" }} /><span style={{ flex: 1 }}><strong style={{ display: "block", fontFamily: "Outfit", fontSize: 14 }}>{activity.member}</strong><small style={{ display: "block", marginTop: 4, color: "#aaa", fontSize: 12 }}>成長記録を共有 · {activity.when}</small></span></button> : <div key={activity.id} style={{ padding: "14px 16px", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}><button onClick={() => openMember(teamMembers.find((member) => member.id === activity.memberId)!)} style={{ padding: 0, border: "none", background: "transparent", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{activity.member}</button><span style={{ color: "#777", fontFamily: "Inter", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>{activity.when}</span></p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{activity.exercise} · {activity.weight ? `${activity.weight}kg × ` : ""}{activity.reps}回</p></div>)}</div></div>}
+          {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>成長記録</p><button onClick={() => setScreen("growth")} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>ギャラリーを開く</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredTeamPhotos.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, padding: 12 }}>{filteredTeamPhotos.slice(0, 3).map((photo) => <button key={photo.id} onClick={() => setScreen("growth")} style={{ padding: 0, overflow: "hidden", border: "1px solid #333", borderRadius: 8, background: "#202020", cursor: "pointer" }}><img src={photo.imageUrl} alt={`${photo.owner}の成長記録`} style={{ display: "block", width: "100%", aspectRatio: "3 / 4", objectFit: "cover" }} /></button>)}</div> : <button onClick={() => setScreen("growth")} style={{ width: "100%", padding: 16, border: "none", background: "transparent", color: "#777", textAlign: "left", cursor: "pointer" }}>共有写真はありません</button>}</div></div>}
           {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500, marginBottom: 14 }}>メンバー</p><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{teamMembers.map((member, index) => <button key={member.id} onClick={() => openMember(member)} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "13px 16px", border: "none", borderBottom: index < teamMembers.length - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><i style={{ width: 7, height: 7, borderRadius: "50%", background: "#c8ff00" }} /><span style={{ flex: 1, fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{member.name}</span><span style={{ color: "#777", fontSize: 12 }}>今週 {member.weeklyCount}回</span><span style={{ color: "#666", fontSize: 18 }}>›</span></button>)}</div></div>}
           {selectedActivityDay && <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "rgba(0,0,0,.7)" }}><section style={{ width: "100%", maxWidth: 360, padding: 20, border: "1px solid #333", borderRadius: 16, background: "#171717" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h2 style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 700 }}>8月{selectedActivityDay}日</h2><button onClick={() => setSelectedActivityDay(null)} style={{ border: "none", background: "transparent", color: "#aaa", fontSize: 20, cursor: "pointer" }}>×</button></div>{filteredActivities.filter((record) => record.day === selectedActivityDay).map((record) => <div key={record.id} style={{ padding: "12px 0", borderTop: "1px solid #282828" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{record.member}</p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{record.exercise} · {record.weight ? `${record.weight}kg × ` : ""}{record.reps}回</p></div>)}</section></div>}
         </div>
