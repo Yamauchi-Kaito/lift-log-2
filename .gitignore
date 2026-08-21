@@ -4,6 +4,10 @@ build/
 .cache/
 .env*
 !.env.example
+!.env.e2e.example
+playwright/.auth/
+test-results/
+playwright-report/
 .vite/
 vite.config.*.timestamp-*
 *.tsbuildinfo
@@ -12,3 +16,6 @@ logs/
 *.log
 .claude-replay.*
 .tmp-*
+
+# Local LLM automation state
+.ai-loop/
