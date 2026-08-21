@@ -7,8 +7,7 @@ import type { WorkoutSaveData } from "./TrainingEndScreen"
 import QuickRecordScreen from "./QuickRecordScreen"
 import type { QuickRecordSaveData } from "./QuickRecordScreen"
 import HistoryScreen from "./HistoryScreen"
-import { INITIAL_HISTORY_RECORDS } from "./HistoryScreen"
-import type { HistoryRecord } from "./HistoryScreen"
+import type { HistoryQuickRecordChanges, HistoryRecord } from "./HistoryScreen"
 import MenuEditorScreen from "./MenuEditorScreen"
 import MenuListScreen from "./MenuListScreen"
 import ExerciseManagerScreen from "./ExerciseManagerScreen"
@@ -28,20 +27,12 @@ import type { PersonalWorkspace, TeamWorkspace, Workspace } from "./workspace"
 
 const INITIAL_WORKSPACES: Workspace[] = []
 const INITIAL_TEAM_MEMBERS: TeamMember[] = []
-
-const PREV_SESSION = {
-  date: "8月7日（木）",
-  duration: "52分",
-  exercises: [
-    { name: "ベンチプレス", sets: "4セット", detail: "80kg × 8回" },
-    { name: "インクラインDB", sets: "3セット", detail: "30kg × 10回" },
-    { name: "ケーブルフライ", sets: "3セット", detail: "15kg × 12回" },
-  ],
-}
-
-const TRAINING_DAYS = new Set([1, 5, 7, 12, 14, 19, 21, 26])
-const TODAY = 9
 const filterChipStyle = { flexShrink: 0, padding: "7px 11px", border: "1px solid", borderRadius: 15, background: "#202020", fontFamily: "Inter", fontSize: 11, cursor: "pointer" } as const
+const displayNameFallback = "ユーザー"
+
+function displayNameOrFallback(value: string | null | undefined) {
+  return value?.trim() || displayNameFallback
+}
 
 function uniqueWorkspaces(workspaces: Workspace[]) {
   const byId = new Map<string, Workspace>()
@@ -55,7 +46,7 @@ async function loadProfileDisplayNames(userIds: string[]) {
 
   const { data, error } = await supabase.from("profiles").select("id, display_name").in("id", ids)
   if (error) throw error
-  return new Map((data ?? []).map((profile) => [profile.id, profile.display_name]))
+  return new Map((data ?? []).map((profile) => [profile.id, displayNameOrFallback(profile.display_name)]))
 }
 
 function createStorageObjectId() {
@@ -102,9 +93,12 @@ function WeekProgress({ done, target }: { done: number; target: number }) {
   )
 }
 
-function MiniCalendar({ activities, filter, onDaySelect }: { activities?: SharedRecord[]; filter?: string[]; onDaySelect?: (day: number) => void }) {
-  const year = 2026
-  const month = 7
+type CalendarActivity = { id: string; memberId: string; day?: number; timestamp?: string }
+
+function MiniCalendar({ activities, filter, onDaySelect }: { activities: CalendarActivity[]; filter?: string[]; onDaySelect?: (day: number) => void }) {
+  const referenceDate = new Date()
+  const year = referenceDate.getFullYear()
+  const month = referenceDate.getMonth()
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
 
@@ -148,16 +142,20 @@ function MiniCalendar({ activities, filter, onDaySelect }: { activities?: Shared
       >
         {cells.map((day, idx) => {
           if (!day) return <div key={`empty-${idx}`} />
-          const isTraining = TRAINING_DAYS.has(day)
-          const isToday = day === TODAY
+          const isToday = day === referenceDate.getDate()
           const isSun = idx % 7 === 0
           const isSat = idx % 7 === 6
           const memberColors: Record<string, string> = {}
-          const dayActivities = activities?.filter((record) => record.day === day && (!filter?.length || filter.includes(record.memberId))) ?? []
+          const dayActivities = activities.filter((record) => {
+            const timestamp = record.timestamp ? new Date(record.timestamp) : null
+            return record.day === day
+              && (!timestamp || (timestamp.getFullYear() === year && timestamp.getMonth() === month))
+              && (!filter?.length || filter.includes(record.memberId))
+          })
           return (
             <button
-              onClick={() => dayActivities.length && onDaySelect?.(day)}
-              disabled={!dayActivities.length}
+              onClick={() => onDaySelect?.(day)}
+              disabled={!dayActivities.length || !onDaySelect}
               key={day}
               style={{
                 display: "flex",
@@ -168,7 +166,7 @@ function MiniCalendar({ activities, filter, onDaySelect }: { activities?: Shared
                 paddingBottom: 3,
                 border: "none",
                 background: "transparent",
-                cursor: dayActivities.length ? "pointer" : "default",
+                cursor: dayActivities.length && onDaySelect ? "pointer" : "default",
                 paddingLeft: 0,
                 paddingRight: 0,
               }}
@@ -190,7 +188,7 @@ function MiniCalendar({ activities, filter, onDaySelect }: { activities?: Shared
               >
                 {day}
               </span>
-              {activities ? <div style={{ display: "flex", gap: 2, minHeight: 6, alignItems: "center" }}>{dayActivities.slice(0, 3).map((record) => <i key={record.id} style={{ width: 5, height: 5, borderRadius: "50%", background: memberColors[record.memberId] ?? "#888" }} />)}{dayActivities.length > 3 && <small style={{ color: "#888", fontSize: 8 }}>+{dayActivities.length - 3}</small>}</div> : <div style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: isTraining ? "#c8ff00" : "transparent", opacity: isTraining ? (day <= TODAY ? 1 : 0.3) : 0 }} />}
+              <div style={{ display: "flex", gap: 2, minHeight: 6, alignItems: "center" }}>{dayActivities.slice(0, 3).map((record) => <i key={record.id} style={{ width: 5, height: 5, borderRadius: "50%", background: memberColors[record.memberId] ?? "#c8ff00" }} />)}{dayActivities.length > 3 && <small style={{ color: "#888", fontSize: 8 }}>+{dayActivities.length - 3}</small>}</div>
             </button>
           )
         })}
@@ -496,6 +494,8 @@ export default function App() {
   const [onboardingError, setOnboardingError] = useState<string | null>(null)
   const [profileExists, setProfileExists] = useState(false)
   const [profileRefresh, setProfileRefresh] = useState(0)
+  const [displayName, setDisplayName] = useState("")
+  const [displayNameSaving, setDisplayNameSaving] = useState(false)
   const [screen, setScreen] = useState<"home" | "workout" | "quick-record" | "history" | "menu-list" | "menu-editor" | "exercise-manager" | "team-create" | "team-member" | "team-manage" | "workspace-manager" | "growth" | "settings">("home")
   const [activeTab, setActiveTab] = useState<Tab>("home")
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
@@ -515,7 +515,7 @@ export default function App() {
   const [menuLoading, setMenuLoading] = useState(false)
   const [menuSaving, setMenuSaving] = useState(false)
   const [menuError, setMenuError] = useState<string | null>(null)
-  const [historyRecords, setHistoryRecords] = useState<HistoryRecord[]>(INITIAL_HISTORY_RECORDS)
+  const [historyRecords, setHistoryRecords] = useState<HistoryRecord[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [workoutSaving, setWorkoutSaving] = useState(false)
@@ -558,6 +558,8 @@ export default function App() {
     setProfileError(null)
     setOnboardingError(null)
     setProfileExists(false)
+    setDisplayName("")
+    setDisplayNameSaving(false)
     setScreen("home")
     setActiveTab("home")
     setCurrentWorkspaceId(null)
@@ -799,7 +801,7 @@ export default function App() {
       setProfileError(null)
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, onboarding_completed, training_preference")
+        .select("id, display_name, onboarding_completed, training_preference")
         .eq("id", user.id)
         .maybeSingle()
 
@@ -810,6 +812,7 @@ export default function App() {
         return
       }
       setProfileExists(Boolean(data))
+      setDisplayName(displayNameOrFallback(data?.display_name))
       setTrainingTendency(data?.training_preference ?? "両方")
       setOnboarding(!data?.onboarding_completed)
     }
@@ -894,6 +897,7 @@ export default function App() {
         .from("workout_session_shares")
         .select("id, workspace_id, shared_at, workout_sessions!inner(owner_id, started_at, workout_exercises(exercise_name_snapshot, position, workout_sets(weight_kg, reps, position)))")
         .in("workspace_id", teamIds)
+        .is("workout_sessions.deleted_at", null)
         .order("shared_at", { ascending: false })
 
       if (error) throw error
@@ -944,7 +948,7 @@ export default function App() {
       })
 
       const displayNames = await loadProfileDisplayNames(records.map((record) => record.memberId))
-      if (active) setSharedRecords(records.map((record) => ({ ...record, member: displayNames.get(record.memberId) ?? record.memberId })))
+      if (active) setSharedRecords(records.map((record) => ({ ...record, member: displayNames.get(record.memberId) ?? displayNameFallback })))
     }
 
     void loadSharedRecords().catch((error) => console.error("Shared activity load failed:", error))
@@ -980,11 +984,15 @@ export default function App() {
       console.error("Team member profile load failed:", profileError)
     }
     if (authenticatedUserIdRef.current !== user.id) return
+    const now = new Date()
+    const weekStart = new Date(now)
+    weekStart.setHours(0, 0, 0, 0)
+    weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7))
     setTeamMembers(members.map((member) => ({
       id: member.user_id,
-      name: displayNames.get(member.user_id) ?? member.user_id,
+      name: displayNames.get(member.user_id) ?? displayNameFallback,
       systemRole: member.system_role === "owner" ? "Owner" : member.system_role === "admin" ? "Admin" : "Member",
-      weeklyCount: sharedRecords.filter((record) => record.teamId === current.id && record.memberId === member.user_id).length,
+      weeklyCount: sharedRecords.filter((record) => record.teamId === current.id && record.memberId === member.user_id && record.timestamp && new Date(record.timestamp) >= weekStart).length,
       recent: "",
     } satisfies TeamMember)))
     setTeamMembersWorkspaceId(current.id)
@@ -1038,10 +1046,15 @@ export default function App() {
       return
     }
     if (authenticatedUserIdRef.current !== user.id) return
+    if (!user.email) {
+      setIncomingInvitations([])
+      return
+    }
 
     const { data, error } = await supabase
       .from("workspace_invitations")
       .select("id, expires_at, accepted_at, revoked_at, workspaces(name)")
+      .eq("invited_email", user.email)
       .is("accepted_at", null)
       .is("revoked_at", null)
       .gt("expires_at", new Date().toISOString())
@@ -1115,7 +1128,7 @@ export default function App() {
         return {
           id: photo.id,
           ownerId: photo.owner_id,
-          owner: displayNames.get(photo.owner_id) ?? photo.owner_id,
+          owner: displayNames.get(photo.owner_id) ?? displayNameFallback,
           workspaceId: photo.workspace_id,
           visibility: photo.visibility,
           takenAt: photo.taken_at,
@@ -1324,11 +1337,149 @@ export default function App() {
     return reloaded
   }
 
+  const saveDisplayName = async (nextDisplayName: string) => {
+    const value = nextDisplayName.trim()
+    if (!value || value.length > 40) return "表示名は1〜40文字で入力してください。"
+
+    setDisplayNameSaving(true)
+    const { error } = await supabase
+      .from("profiles")
+      .update({ display_name: value, updated_at: new Date().toISOString() })
+      .eq("id", user.id)
+    setDisplayNameSaving(false)
+    if (error) {
+      console.error("Display name save failed:", error)
+      return "表示名を保存できませんでした。もう一度お試しください。"
+    }
+
+    setDisplayName(value)
+    setTeamMembers((current) => current.map((member) => member.id === user.id ? { ...member, name: value } : member))
+    setSharedRecords((current) => current.map((record) => record.memberId === user.id ? { ...record, member: value } : record))
+    setGrowthPhotos((current) => current.map((photo) => photo.ownerId === user.id ? { ...photo, owner: value } : photo))
+    return null
+  }
+
+  const updateQuickHistoryRecord = async (id: string | number, changes: HistoryQuickRecordChanges) => {
+    const { error } = await supabase.rpc("update_quick_workout_record", {
+      target_session_id: String(id),
+      new_weight_kg: changes.weightKg,
+      new_reps: changes.reps,
+    })
+    if (error) {
+      console.error("Quick record update failed:", error)
+      return "記録を保存できませんでした。もう一度お試しください。"
+    }
+    return await loadHistory() ? null : "保存しましたが、履歴を更新できませんでした。"
+  }
+
+  const deleteHistoryRecord = async (id: string | number) => {
+    const { error } = await supabase.rpc("delete_own_workout_session", { target_session_id: String(id) })
+    if (error) {
+      console.error("Workout delete failed:", error)
+      return "記録を削除できませんでした。もう一度お試しください。"
+    }
+    return await loadHistory() ? null : "削除しましたが、履歴を更新できませんでした。"
+  }
+
+  const unshareTeamRecord = async (id: string) => {
+    const { error } = await supabase.rpc("unshare_workout_session", { target_share_id: id })
+    if (error) {
+      console.error("Workout unshare failed:", error)
+      setTeamRoleError("共有を解除できませんでした。もう一度お試しください。")
+      return false
+    }
+    setSharedRecords((current) => current.filter((record) => record.id !== id))
+    return true
+  }
+
+  const unshareTeamPhoto = async (id: string) => {
+    const photo = growthPhotos.find((item) => item.id === id)
+    if (!photo || photo.ownerId !== user.id) {
+      setGrowthPhotoError("自分の写真のみ共有を解除できます。")
+      return false
+    }
+    setGrowthPhotoSaving(true)
+    setGrowthPhotoError(null)
+    const { error } = await supabase.rpc("unshare_team_body_photo", { target_photo_id: id })
+    setGrowthPhotoSaving(false)
+    if (error) {
+      console.error("Team photo unshare failed:", error)
+      setGrowthPhotoError("写真の共有を解除できませんでした。もう一度お試しください。")
+      return false
+    }
+    setGrowthPhotos((current) => current.filter((photo) => photo.id !== id))
+    return true
+  }
+
+  const removeTeamMember = async (workspaceId: string, userId: string) => {
+    setTeamRoleSaving(true)
+    setTeamRoleError(null)
+    const { error } = await supabase.rpc("remove_team_member", { target_workspace_id: workspaceId, target_user_id: userId })
+    if (error) {
+      console.error("Team member removal failed:", error)
+      setTeamRoleSaving(false)
+      setTeamRoleError("メンバーを削除できませんでした。もう一度お試しください。")
+      return false
+    }
+    try {
+      await loadTeamMembers(workspaceId)
+      setTeamRoleSaving(false)
+      return true
+    } catch (loadError) {
+      console.error("Team member reload failed after removal:", loadError)
+      setTeamRoleSaving(false)
+      setTeamRoleError("メンバーは削除しましたが、一覧を更新できませんでした。")
+      return false
+    }
+  }
+
+  const transferTeamOwnership = async (workspaceId: string, userId: string) => {
+    setTeamRoleSaving(true)
+    setTeamRoleError(null)
+    const { error } = await supabase.rpc("transfer_team_ownership", { target_workspace_id: workspaceId, target_user_id: userId })
+    if (error) {
+      console.error("Team ownership transfer failed:", error)
+      setTeamRoleSaving(false)
+      setTeamRoleError("Ownerを移譲できませんでした。もう一度お試しください。")
+      return false
+    }
+    setWorkspaces((current) => current.map((workspace) => workspace.id === workspaceId && workspace.type === "チーム" ? { ...workspace, systemRole: "admin" } : workspace))
+    try {
+      await loadTeamMembers(workspaceId)
+      setTeamRoleSaving(false)
+      return true
+    } catch (loadError) {
+      console.error("Team member reload failed after ownership transfer:", loadError)
+      setTeamRoleSaving(false)
+      setTeamRoleError("Ownerを移譲しましたが、一覧を更新できませんでした。")
+      return false
+    }
+  }
+
+  const leaveTeamWorkspace = async (workspaceId: string) => {
+    const workspace = workspaces.find((item) => item.id === workspaceId)
+    if (!workspace || workspace.type !== "チーム" || workspace.systemRole === "owner") return false
+    const { error } = await supabase.rpc("leave_team_workspace", { target_workspace_id: workspaceId })
+    if (error) {
+      console.error("Team exit failed:", error)
+      return false
+    }
+    const fallbackWorkspaceId = workspaces.find((item) => item.id !== workspaceId && item.type === "個人")?.id ?? null
+    setWorkspaces((current) => current.filter((item) => item.id !== workspaceId))
+    setCurrentWorkspaceId((current) => current === workspaceId ? fallbackWorkspaceId : current)
+    setManagedTeamWorkspaceId((current) => current === workspaceId ? null : current)
+    setTeamMembers((current) => current.filter((member) => member.id !== user.id))
+    setSharedRecords((current) => current.filter((record) => record.teamId !== workspaceId))
+    setGrowthPhotos((current) => current.filter((photo) => photo.workspaceId !== workspaceId))
+    setWorkspaceRefresh((current) => current + 1)
+    return true
+  }
+
   const completeOnboarding = async (teamUse: boolean, tendency: string) => {
     setProfileSaving(true)
     setOnboardingError(null)
     const profile = {
-      display_name: user.user_metadata.full_name ?? user.email?.split("@")[0] ?? "ユーザー",
+      display_name: displayNameOrFallback(user.user_metadata.full_name ?? user.email?.split("@")[0]),
       training_preference: tendency,
       onboarding_completed: true,
       updated_at: new Date().toISOString(),
@@ -1343,6 +1494,7 @@ export default function App() {
       return
     }
     setProfileExists(true)
+    setDisplayName(profile.display_name)
     setTrainingTendency(tendency)
     setOnboarding(false)
     void loadIncomingInvitations().catch((loadError) => console.error("Incoming invitation reload failed:", loadError))
@@ -1763,7 +1915,7 @@ export default function App() {
     return <QuickRecordScreen onBack={() => setScreen("home")} teams={teamWorkspaces} exercises={registeredExercises} onLoadPreviousSet={loadPreviousSet} onSaveRecord={saveQuickRecord} />
   }
   if (screen === "history") {
-    return <HistoryScreen onHome={() => { setActiveTab("home"); setScreen("home") }} onQuick={() => setScreen("quick-record")} onSettings={() => setScreen("settings")} onGrowth={() => setScreen("growth")} records={historyRecords} loading={historyLoading} error={historyError} onRetry={() => void loadHistory()} onDelete={(id) => setHistoryRecords((current) => current.filter((record) => record.id !== id))} />
+    return <HistoryScreen onHome={() => { setActiveTab("home"); setScreen("home") }} onQuick={() => setScreen("quick-record")} onSettings={() => setScreen("settings")} onGrowth={() => setScreen("growth")} records={historyRecords} loading={historyLoading} error={historyError} onRetry={() => void loadHistory()} onDelete={deleteHistoryRecord} onUpdateQuick={updateQuickHistoryRecord} />
   }
   if (screen === "menu-list") {
     return <MenuListScreen menus={menus} loading={menuLoading} error={menuError} onRetry={() => void loadMenus()} onBack={() => setScreen(menuListBack)} onCreate={() => { setMenuError(null); setEditingMenu(undefined); setScreen("menu-editor") }} onEdit={(menu) => { setMenuError(null); setEditingMenu(menu); setScreen("menu-editor") }} onStart={(menu) => { setWorkoutMenu(menu); setScreen("workout") }} />
@@ -1915,11 +2067,11 @@ export default function App() {
       setTeamInvitationError("招待は取り消しましたが、一覧を更新できませんでした。")
       return false
     }
-  }} onRemoveRecord={(id) => setSharedRecords((current) => current.filter((record) => record.id !== id))} />
-  if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setCurrentWorkspaceId(id); setScreen("home") }} onRename={async (id, name) => { const workspace = workspaces.find((item) => item.id === id); if (!workspace) return false; const { data, error } = await supabase.from("workspaces").update({ name }).eq("id", id).select("id").single(); if (error || !data) { console.error("Workspace rename failed:", error ?? "Workspace not updated"); return false } setWorkspaces((current) => current.map((item) => item.id === id ? { ...item, name } : item)); return true }} onExit={(id) => { setWorkspaces((current) => current.filter((workspace) => workspace.id !== id)); setCurrentWorkspaceId((current) => current === id ? workspaces.find((workspace) => workspace.id !== id)?.id ?? null : current) }} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setTeamMembers([]); setTeamMembersWorkspaceId(null); setTeamInvitations([]); setCurrentWorkspaceId(id); setManagedTeamWorkspaceId(id); void loadTeamMembers(id).catch((error) => console.error("Team member load failed:", error)); setScreen("team-manage") }} />
+  }} onRemoveRecord={() => undefined} onUnshareRecord={unshareTeamRecord} onRemoveMember={(id) => managedTeamWorkspace ? removeTeamMember(managedTeamWorkspace.id, id) : false} onTransferOwnership={(id) => managedTeamWorkspace ? transferTeamOwnership(managedTeamWorkspace.id, id) : false} onUnsharePhoto={unshareTeamPhoto} onDeletePhoto={(id) => { const photo = growthPhotos.find((item) => item.id === id); return photo ? deleteGrowthPhoto(photo) : Promise.resolve(false) }} />
+  if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setCurrentWorkspaceId(id); setScreen("home") }} onRename={async (id, name) => { const workspace = workspaces.find((item) => item.id === id); if (!workspace) return false; const { error } = await supabase.rpc("rename_workspace", { target_workspace_id: id, new_name: name }); if (error) { console.error("Workspace rename failed:", error); return false } setWorkspaces((current) => current.map((item) => item.id === id ? { ...item, name } : item)); return true }} onExit={leaveTeamWorkspace} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setTeamMembers([]); setTeamMembersWorkspaceId(null); setTeamInvitations([]); setCurrentWorkspaceId(id); setManagedTeamWorkspaceId(id); void loadTeamMembers(id).catch((error) => console.error("Team member load failed:", error)); setScreen("team-manage") }} />
   if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} memberFilter={currentTeamWorkspace ? activityFilter : undefined} onMemberFilterChange={currentTeamWorkspace ? setActivityFilter : undefined} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onSave={saveGrowthPhoto} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
   if (screen === "settings") {
-    return <SettingsScreen onHome={() => setScreen("home")} onQuick={() => setScreen("quick-record")} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onCreateTeam={() => setScreen("team-create")} onWorkspaceManager={() => setScreen("workspace-manager")} tendency={trainingTendency} onTendency={setTrainingTendency} workspaces={workspaces} currentWorkspaceId={currentWorkspace.id} onSelectWorkspace={setCurrentWorkspaceId} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} onAcceptInvitation={async (id) => {
+    return <SettingsScreen onHome={() => setScreen("home")} onQuick={() => setScreen("quick-record")} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onCreateTeam={() => setScreen("team-create")} onWorkspaceManager={() => setScreen("workspace-manager")} tendency={trainingTendency} onTendency={setTrainingTendency} workspaces={workspaces} currentWorkspaceId={currentWorkspace.id} onSelectWorkspace={setCurrentWorkspaceId} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
       setAcceptingInvitationId(id)
       setIncomingInvitationError(null)
       const { error } = await supabase.rpc("accept_team_invitation", { invitation_id: id })
@@ -1955,6 +2107,27 @@ export default function App() {
     ...teamPhotos.map((photo) => ({ kind: "photo" as const, id: `photo-${photo.id}`, memberId: photo.ownerId, member: photo.owner, when: photo.dateLabel, timestamp: photo.takenAt, photo })),
   ].sort((first, second) => second.timestamp.localeCompare(first.timestamp))
   const filteredRecentActivities = activityFilter.length === 0 ? recentActivities : recentActivities.filter((activity) => activityFilter.includes(activity.memberId))
+  const currentDate = new Date()
+  const currentMonthLabel = new Intl.DateTimeFormat("ja-JP", { month: "numeric" }).format(currentDate)
+  const currentMonthActivities = isTeamWorkspace
+    ? teamActivities
+    : historyRecords.map((record) => ({ id: String(record.id), memberId: user.id, day: record.day, timestamp: record.performedAt ?? record.normal?.startedAt }))
+  const currentMonthRecordCount = currentMonthActivities.filter((activity) => {
+    if (!activity.timestamp) return false
+    const timestamp = new Date(activity.timestamp)
+    return timestamp.getFullYear() === currentDate.getFullYear() && timestamp.getMonth() === currentDate.getMonth()
+  }).length
+  const currentWeekStart = new Date(currentDate)
+  currentWeekStart.setHours(0, 0, 0, 0)
+  currentWeekStart.setDate(currentDate.getDate() - ((currentDate.getDay() + 6) % 7))
+  const currentWeekRecordCount = historyRecords.filter((record) => {
+    const timestamp = record.performedAt ?? record.normal?.startedAt
+    return timestamp ? new Date(timestamp) >= currentWeekStart : false
+  }).length
+  const previousRecord = historyRecords[0]
+  const previousRows = previousRecord?.normal?.exercises.length
+    ? previousRecord.normal.exercises.map((exercise) => ({ name: exercise.name, sets: `${exercise.sets.length}セット`, detail: exercise.sets[0] ? `${exercise.sets[0].weightKg !== null ? `${exercise.sets[0].weightKg}kg × ` : ""}${exercise.sets[0].reps}回` : "完了セットなし" }))
+    : previousRecord ? [{ name: previousRecord.title, sets: previousRecord.sets, detail: previousRecord.result }] : []
 
   return (
     <div
@@ -2165,7 +2338,7 @@ export default function App() {
                       lineHeight: 1,
                     }}
                   >
-                    2
+                    {currentWeekRecordCount}
                   </span>
                   <span
                     style={{
@@ -2180,7 +2353,7 @@ export default function App() {
                   </span>
                 </div>
               </div>
-              <WeekProgress done={2} target={3} />
+              <WeekProgress done={Math.min(currentWeekRecordCount, 3)} target={3} />
               <p
                 style={{
                   fontSize: 12,
@@ -2189,7 +2362,7 @@ export default function App() {
                   fontFamily: "Inter",
                 }}
               >
-                あと1回で今週の目標達成
+                {currentWeekRecordCount >= 3 ? "今週の目標を達成しました" : `あと${3 - currentWeekRecordCount}回で今週の目標達成`}
               </p>
             </div>
           </div>
@@ -2282,15 +2455,15 @@ export default function App() {
                     color: "#f0f0f0",
                   }}
                 >
-                  {PREV_SESSION.date}
+                  {previousRecord?.date ?? "記録はまだありません"}
                 </span>
                 <span
                   style={{ fontSize: 12, color: "#777", fontFamily: "Inter" }}
                 >
-                  {PREV_SESSION.duration}
+                  {previousRecord?.duration ?? "—"}
                 </span>
               </div>
-              {PREV_SESSION.exercises.map((ex, i) => (
+              {previousRows.map((ex, i) => (
                 <div
                   key={ex.name}
                   style={{
@@ -2330,6 +2503,7 @@ export default function App() {
                   </div>
                 </div>
               ))}
+              {!previousRows.length && <p style={{ padding: "16px 20px", color: "#777", fontSize: 13 }}>トレーニングを記録するとここに表示されます</p>}
               {/* Secondary action */}
               <button
                 onClick={() => { if (menus[0]) { setWorkoutMenu(menus[0]); setScreen("workout") } else { setMenuListBack("home"); setScreen("menu-list") } }}
@@ -2394,12 +2568,12 @@ export default function App() {
                   fontWeight: 500,
                 }}
               >
-                {isTeamWorkspace ? "8月のチーム活動" : "8月の実施状況"}
+                {isTeamWorkspace ? `${currentMonthLabel}のチーム活動` : `${currentMonthLabel}の実施状況`}
               </p>
               <span
                 style={{ fontFamily: "Outfit", fontSize: 12, color: "#777" }}
               >
-                {TRAINING_DAYS.size}回 / 今月
+                {currentMonthRecordCount}回 / 今月
               </span>
             </div>
             {isTeamWorkspace && <><div style={{ display: "flex", gap: 7, overflowX: "auto", marginBottom: 9, paddingBottom: 2 }}><button onClick={() => setActivityFilter([])} style={{ ...filterChipStyle, borderColor: activityFilter.length === 0 ? "#c8ff00" : "#333", color: activityFilter.length === 0 ? "#c8ff00" : "#aaa" }}>全員</button>{teamMembers.map((member) => <button key={member.id} onClick={() => setActivityFilter((current) => current.includes(member.id) ? current.filter((id) => id !== member.id) : [...current, member.id])} onDoubleClick={() => openMember(member)} title="ダブルタップで詳細" style={{ ...filterChipStyle, borderColor: activityFilter.includes(member.id) ? "#c8ff00" : "#333", color: activityFilter.includes(member.id) ? "#c8ff00" : "#aaa" }}>{member.name}</button>)}</div><div style={{ display: "flex", gap: 10, overflowX: "auto", marginBottom: 10 }}>{teamMembers.map((member) => <button key={member.id} onClick={() => openMember(member)} style={{ display: "flex", alignItems: "center", gap: 4, padding: 0, border: "none", background: "transparent", color: "#888", fontSize: 10, whiteSpace: "nowrap", cursor: "pointer" }}><i style={{ width: 6, height: 6, borderRadius: "50%", background: "#c8ff00" }} />{member.name}</button>)}</div></>}
@@ -2411,13 +2585,13 @@ export default function App() {
                 padding: "16px 16px 12px",
               }}
             >
-              <MiniCalendar activities={isTeamWorkspace ? teamActivities : undefined} filter={activityFilter} onDaySelect={setSelectedActivityDay} />
+              <MiniCalendar activities={currentMonthActivities} filter={isTeamWorkspace ? activityFilter : undefined} onDaySelect={isTeamWorkspace ? setSelectedActivityDay : undefined} />
             </div>
           </div>
           {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>最近の活動</p><button onClick={() => { setActiveTab("history"); setScreen("history") }} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>もっと見る</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredRecentActivities.slice(0, 3).map((activity, index) => activity.kind === "photo" ? <button key={activity.id} onClick={() => setScreen("growth")} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "10px 16px", border: "none", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><img src={activity.photo.imageUrl} alt="" style={{ width: 38, height: 48, borderRadius: 5, objectFit: "cover", background: "#202020" }} /><span style={{ flex: 1 }}><strong style={{ display: "block", fontFamily: "Outfit", fontSize: 14 }}>{activity.member}</strong><small style={{ display: "block", marginTop: 4, color: "#aaa", fontSize: 12 }}>成長記録を共有 · {activity.when}</small></span></button> : <div key={activity.id} style={{ padding: "14px 16px", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}><button onClick={() => openMember(teamMembers.find((member) => member.id === activity.memberId)!)} style={{ padding: 0, border: "none", background: "transparent", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{activity.member}</button><span style={{ color: "#777", fontFamily: "Inter", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>{activity.when}</span></p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{activity.exercise} · {activity.weight ? `${activity.weight}kg × ` : ""}{activity.reps}回</p></div>)}</div></div>}
           {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>成長記録</p><button onClick={() => setScreen("growth")} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>ギャラリーを開く</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredTeamPhotos.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, padding: 12 }}>{filteredTeamPhotos.slice(0, 3).map((photo) => <button key={photo.id} onClick={() => setScreen("growth")} style={{ padding: 0, overflow: "hidden", border: "1px solid #333", borderRadius: 8, background: "#202020", cursor: "pointer" }}><img src={photo.imageUrl} alt={`${photo.owner}の成長記録`} style={{ display: "block", width: "100%", aspectRatio: "3 / 4", objectFit: "cover" }} /></button>)}</div> : <button onClick={() => setScreen("growth")} style={{ width: "100%", padding: 16, border: "none", background: "transparent", color: "#777", textAlign: "left", cursor: "pointer" }}>共有写真はありません</button>}</div></div>}
           {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500, marginBottom: 14 }}>メンバー</p><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{teamMembers.map((member, index) => <button key={member.id} onClick={() => openMember(member)} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "13px 16px", border: "none", borderBottom: index < teamMembers.length - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><i style={{ width: 7, height: 7, borderRadius: "50%", background: "#c8ff00" }} /><span style={{ flex: 1, fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{member.name}</span><span style={{ color: "#777", fontSize: 12 }}>今週 {member.weeklyCount}回</span><span style={{ color: "#666", fontSize: 18 }}>›</span></button>)}</div></div>}
-          {selectedActivityDay && <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "rgba(0,0,0,.7)" }}><section style={{ width: "100%", maxWidth: 360, padding: 20, border: "1px solid #333", borderRadius: 16, background: "#171717" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h2 style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 700 }}>8月{selectedActivityDay}日</h2><button onClick={() => setSelectedActivityDay(null)} style={{ border: "none", background: "transparent", color: "#aaa", fontSize: 20, cursor: "pointer" }}>×</button></div>{filteredActivities.filter((record) => record.day === selectedActivityDay).map((record) => <div key={record.id} style={{ padding: "12px 0", borderTop: "1px solid #282828" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{record.member}</p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{record.exercise} · {record.weight ? `${record.weight}kg × ` : ""}{record.reps}回</p></div>)}</section></div>}
+          {selectedActivityDay && <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "rgba(0,0,0,.7)" }}><section style={{ width: "100%", maxWidth: 360, padding: 20, border: "1px solid #333", borderRadius: 16, background: "#171717" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h2 style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 700 }}>{currentMonthLabel}{selectedActivityDay}日</h2><button onClick={() => setSelectedActivityDay(null)} style={{ border: "none", background: "transparent", color: "#aaa", fontSize: 20, cursor: "pointer" }}>×</button></div>{filteredActivities.filter((record) => record.day === selectedActivityDay).map((record) => <div key={record.id} style={{ padding: "12px 0", borderTop: "1px solid #282828" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{record.member}</p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{record.exercise} · {record.weight ? `${record.weight}kg × ` : ""}{record.reps}回</p></div>)}</section></div>}
         </div>
 
         {/* ─── Bottom nav ─── */}
