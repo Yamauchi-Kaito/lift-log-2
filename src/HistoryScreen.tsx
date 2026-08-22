@@ -4,7 +4,7 @@ export type HistoryExercise = { id: string; name: string; kind: string; position
 export type HistoryRecord = { id: string | number; date: string; day: number; title: string; result: string; sets: string; duration: string; share: string; quick?: boolean; performedAt?: string; normal?: { startedAt: string; endedAt: string; note: string | null; exercises: HistoryExercise[] } }
 export type HistoryQuickRecordChanges = { weightKg: number | null; reps: number }
 
-export default function HistoryScreen({ onHome, onQuick, onSettings, onGrowth, records, loading, error, onRetry, onDelete, onUpdateQuick }: { onHome: () => void; onQuick: () => void; onSettings: () => void; onGrowth: () => void; records: HistoryRecord[]; loading: boolean; error: string | null; onRetry: () => void; onDelete: (id: string | number) => Promise<string | null>; onUpdateQuick: (id: string | number, changes: HistoryQuickRecordChanges) => Promise<string | null> }) {
+export default function HistoryScreen({ onHome, onQuick, onSettings, records, loading, error, onRetry, onDelete, onUpdateQuick, onGrowth }: { onHome: () => void; onQuick: () => void; onSettings: () => void; records: HistoryRecord[]; loading: boolean; error: string | null; onRetry: () => void; onDelete: (id: string | number) => Promise<string | null>; onUpdateQuick: (id: string | number, changes: HistoryQuickRecordChanges) => Promise<string | null>; onGrowth: () => void }) {
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
   const [detail, setDetail] = useState<HistoryRecord | null>(null)
   const calendarDate = records[0]?.performedAt ? new Date(records[0].performedAt) : records[0]?.normal ? new Date(records[0].normal.startedAt) : new Date()
