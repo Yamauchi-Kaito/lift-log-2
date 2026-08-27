@@ -12,7 +12,7 @@ import MenuEditorScreen from "./MenuEditorScreen"
 import MenuListScreen from "./MenuListScreen"
 import ExerciseManagerScreen from "./ExerciseManagerScreen"
 import TeamCreateScreen from "./TeamCreateScreen"
-import OnboardingScreen from "./OnboardingScreen"
+
 import WorkspaceManagerScreen from "./WorkspaceManagerScreen"
 import TeamManageScreen from "./TeamManageScreen"
 import type { TeamInvitation } from "./TeamManageScreen"
@@ -489,10 +489,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [onboarding, setOnboarding] = useState<boolean | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
-  const [profileSaving, setProfileSaving] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
-  const [onboardingError, setOnboardingError] = useState<string | null>(null)
-  const [profileExists, setProfileExists] = useState(false)
   const [profileRefresh, setProfileRefresh] = useState(0)
   const [displayName, setDisplayName] = useState("")
   const [displayNameSaving, setDisplayNameSaving] = useState(false)
@@ -505,7 +502,6 @@ export default function App() {
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [workspaceRefresh, setWorkspaceRefresh] = useState(0)
   const [wsMenuOpen, setWsMenuOpen] = useState(false)
-  const [trainingTendency, setTrainingTendency] = useState("両方")
   const [restEnabled, setRestEnabled] = useState(true)
   const [restSeconds, setRestSeconds] = useState(90)
   const [startPressed, setStartPressed] = useState(false)
@@ -550,14 +546,13 @@ export default function App() {
   const [incomingInvitationError, setIncomingInvitationError] = useState<string | null>(null)
   const authenticatedUserIdRef = useRef<string | null>(null)
   const authEventVersionRef = useRef(0)
+  const onboardingInitializedUserIdRef = useRef<string | null>(null)
 
   const resetUserScopedState = useCallback(() => {
+    onboardingInitializedUserIdRef.current = null
     setOnboarding(null)
     setProfileLoading(false)
-    setProfileSaving(false)
     setProfileError(null)
-    setOnboardingError(null)
-    setProfileExists(false)
     setDisplayName("")
     setDisplayNameSaving(false)
     setScreen("home")
@@ -568,7 +563,6 @@ export default function App() {
     setWorkspaceLoading(true)
     setWorkspaceError(null)
     setWsMenuOpen(false)
-    setTrainingTendency("両方")
     setRestEnabled(true)
     setRestSeconds(90)
     setStartPressed(false)
@@ -791,8 +785,6 @@ export default function App() {
       setOnboarding(null)
       setProfileLoading(false)
       setProfileError(null)
-      setOnboardingError(null)
-      setProfileExists(false)
       return () => { active = false }
     }
 
@@ -806,15 +798,38 @@ export default function App() {
         .maybeSingle()
 
       if (!active) return
-      setProfileLoading(false)
       if (error) {
+        setProfileLoading(false)
         setProfileError("プロフィールを読み込めませんでした。通信を確認して再試行してください。")
         return
       }
-      setProfileExists(Boolean(data))
-      setDisplayName(displayNameOrFallback(data?.display_name))
-      setTrainingTendency(data?.training_preference ?? "両方")
-      setOnboarding(!data?.onboarding_completed)
+
+      if (!data?.onboarding_completed && onboardingInitializedUserIdRef.current !== user.id) {
+        onboardingInitializedUserIdRef.current = user.id
+        const profile = {
+          display_name: displayNameOrFallback(user.user_metadata.full_name ?? user.email?.split("@")[0]),
+          training_preference: data?.training_preference ?? "両方",
+          onboarding_completed: true,
+          updated_at: new Date().toISOString(),
+        }
+        const { error: initializationError } = data
+          ? await supabase.from("profiles").update(profile).eq("id", user.id)
+          : await supabase.from("profiles").insert({ id: user.id, ...profile })
+
+        if (!active) return
+        if (initializationError) {
+          onboardingInitializedUserIdRef.current = null
+          setProfileLoading(false)
+          setProfileError("プロフィールを初期化できませんでした。通信を確認して再試行してください。")
+          return
+        }
+        setDisplayName(profile.display_name)
+      } else {
+        setDisplayName(displayNameOrFallback(data?.display_name))
+      }
+
+      setProfileLoading(false)
+      setOnboarding(false)
     }
 
     void loadProfile()
@@ -1475,32 +1490,6 @@ export default function App() {
     return true
   }
 
-  const completeOnboarding = async (teamUse: boolean, tendency: string) => {
-    setProfileSaving(true)
-    setOnboardingError(null)
-    const profile = {
-      display_name: displayNameOrFallback(user.user_metadata.full_name ?? user.email?.split("@")[0]),
-      training_preference: tendency,
-      onboarding_completed: true,
-      updated_at: new Date().toISOString(),
-    }
-    const { error } = profileExists
-      ? await supabase.from("profiles").update(profile).eq("id", user.id)
-      : await supabase.from("profiles").insert({ id: user.id, ...profile })
-
-    setProfileSaving(false)
-    if (error) {
-      setOnboardingError("初回設定を保存できませんでした。もう一度お試しください。")
-      return
-    }
-    setProfileExists(true)
-    setDisplayName(profile.display_name)
-    setTrainingTendency(tendency)
-    setOnboarding(false)
-    void loadIncomingInvitations().catch((loadError) => console.error("Incoming invitation reload failed:", loadError))
-    if (teamUse) setScreen("team-create")
-  }
-
   const saveExercise = async (exercise: RegisteredExercise, isNew: boolean) => {
     setExerciseSaving(true)
     setExerciseError(null)
@@ -1905,8 +1894,6 @@ export default function App() {
 
   const teamWorkspaces = workspaces.filter((workspace): workspace is TeamWorkspace => workspace.type === "チーム")
   const openMember = (member: TeamMember) => { setSelectedMember(member); setSelectedTeamId(currentTeamWorkspace?.id); setScreen("team-member") }
-
-  if (onboarding) return <OnboardingScreen onComplete={completeOnboarding} saving={profileSaving} error={onboardingError} />
 
   if (screen === "workout") {
     return <WorkoutScreen onBack={() => setScreen("home")} menu={workoutMenu} registeredExercises={registeredExercises} saving={workoutSaving} error={workoutSaveError} restEnabled={restEnabled} restDuration={restSeconds} onSave={saveWorkoutSession} />
