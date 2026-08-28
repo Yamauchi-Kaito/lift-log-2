@@ -29,7 +29,7 @@ const goalLabels: Record<GoalType, string> = {
     bulk: "増量",
 }
 
-export default function BodyWeightPanel({ userId }: { userId: string }) {
+export default function BodyWeightPanel({ userId, onBack }: { userId: string; onBack?: () => void }) {
     const [records, setRecords] = useState<WeightRecord[]>([])
     const [goal, setGoal] = useState<WeightGoal>({ targetWeightKg: null, goalType: "maintain" })
     const [range, setRange] = useState<RangeKey>("30d")
@@ -215,7 +215,7 @@ export default function BodyWeightPanel({ userId }: { userId: string }) {
 
     return <section style={section} aria-label="体重管理">
         <div style={sectionHead}>
-            <div><p style={eyebrow}>BODY WEIGHT</p><h2 style={heading}>体重管理</h2></div>
+            <div style={titleGroup}>{onBack && <button aria-label="設定に戻る" onClick={onBack} style={backButton}>‹</button>}<div><p style={eyebrow}>BODY WEIGHT</p><h2 style={heading}>体重管理</h2></div></div>
             <span style={privateBadge}>自分のみ</span>
         </div>
 
@@ -350,6 +350,8 @@ function formatDateLabel(value: string) {
 
 const section = { paddingTop: 18, paddingBottom: 26 } as const
 const sectionHead = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 } as const
+const titleGroup = { display: "flex", alignItems: "center", gap: 10 } as const
+const backButton = { width: 32, height: 32, padding: 0, border: "1px solid #2a2a2a", borderRadius: 8, background: "#202020", color: "#ddd", cursor: "pointer", fontSize: 22, lineHeight: 1 } as const
 const eyebrow = { margin: 0, color: "#666", fontFamily: "Inter", fontSize: 10, letterSpacing: ".12em" } as const
 const heading = { margin: "3px 0 0", color: "#f2f2f2", fontFamily: "Outfit", fontSize: 18, fontWeight: 700 } as const
 const privateBadge = { padding: "5px 8px", border: "1px solid #333", borderRadius: 999, color: "#888", fontFamily: "Inter", fontSize: 10 } as const
