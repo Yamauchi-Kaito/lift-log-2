@@ -7,8 +7,12 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
+    "supabase:start": "SUPABASE_TELEMETRY_DISABLED=1 supabase start",
+    "supabase:stop": "SUPABASE_TELEMETRY_DISABLED=1 supabase stop",
+    "supabase:status": "SUPABASE_TELEMETRY_DISABLED=1 supabase status -o env",
     "format": "oxfmt",
-    "test:e2e": "playwright test",
+    "preflight:e2e": "node scripts/preflight-e2e.mjs",
+    "test:e2e": "npm run preflight:e2e && playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed"
   },

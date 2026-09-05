@@ -200,7 +200,7 @@ function MiniCalendar({ activities, filter, onDaySelect }: { activities: Calenda
   )
 }
 
-function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord }: { open: boolean; onClose: () => void; onStartWorkout: () => void; onQuickRecord: () => void }) {
+function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeight }: { open: boolean; onClose: () => void; onStartWorkout: () => void; onQuickRecord: () => void; onBodyWeight?: () => void }) {
   const [visible, setVisible] = useState(false)
   const [rendered, setRendered] = useState(false)
 
@@ -280,9 +280,79 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord }: { open: b
             }}
           >
             記録の種類を選択
-          </p>
+            </p>
 
-          {/* Quick record */}
+            {/* Body weight */}
+            <button
+             onClick={() => onBodyWeight?.()}
+             style={{
+               width: "100%",
+               background: "none",
+               border: "1px solid #2a2a2a",
+               borderRadius: 14,
+               padding: "18px 20px",
+               cursor: "pointer",
+               textAlign: "left",
+               marginBottom: 10,
+               display: "flex",
+               alignItems: "flex-start",
+               gap: 16,
+              }}
+            >
+              <div
+               style={{
+                 width: 40,
+                 height: 40,
+                 borderRadius: 10,
+                 backgroundColor: "#222",
+                 display: "flex",
+                 alignItems: "center",
+                 justifyContent: "center",
+                 flexShrink: 0,
+                }}
+              >
+                <svg
+                 width="20"
+                 height="20"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="#c8ff00"
+                 strokeWidth="1.8"
+                 strokeLinecap="round"
+                 strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="13" r="7" />
+                  <circle cx="12" cy="13" r="2.5" />
+                  <path d="M9 4.5a4 4 0 016 0" />
+                </svg>
+              </div>
+              <div>
+                <p
+                 style={{
+                   fontFamily: "Outfit",
+                   fontSize: 16,
+                   fontWeight: 600,
+                   color: "#f0f0f0",
+                   marginBottom: 4,
+                  }}
+                >
+                 体重
+                </p>
+                <p
+                 style={{
+                   fontSize: 13,
+                   color: "#888",
+                   fontFamily: "Inter",
+                   lineHeight: 1.5,
+                   marginBottom: 10,
+                  }}
+                >
+                 体重・体脂肪率を記録する
+                </p>
+              </div>
+            </button>
+
+            {/* Quick record */}
           <button
             onClick={onQuickRecord}
             style={{
@@ -497,6 +567,7 @@ export default function App() {
   const [displayName, setDisplayName] = useState("")
   const [displayNameSaving, setDisplayNameSaving] = useState(false)
   const [screen, setScreen] = useState<"home" | "workout" | "quick-record" | "history" | "menu-list" | "menu-editor" | "exercise-manager" | "team-create" | "team-member" | "team-manage" | "workspace-manager" | "growth" | "body-weight" | "settings">("home")
+  const [chooserCaller, setChooserCaller] = useState<typeof screen>("home")
   const [activeTab, setActiveTab] = useState<Tab>("home")
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
   const [managedTeamWorkspaceId, setManagedTeamWorkspaceId] = useState<string | null>(null)
@@ -1897,13 +1968,14 @@ export default function App() {
 
   const teamWorkspaces = workspaces.filter((workspace): workspace is TeamWorkspace => workspace.type === "チーム")
   const openMember = (member: TeamMember) => { setSelectedMember(member); setSelectedTeamId(currentTeamWorkspace?.id); setScreen("team-member") }
-  const openRecordChooser = () => setSheetOpen(true)
+  const openRecordChooser = () => { setChooserCaller(screen); setSheetOpen(true) }
   const recordChooser = <BottomSheet
     open={sheetOpen}
     onClose={() => setSheetOpen(false)}
     onStartWorkout={() => { setSheetOpen(false); setScreen("workout") }}
     onQuickRecord={() => { setSheetOpen(false); setScreen("quick-record") }}
-  />
+    onBodyWeight={() => { setSheetOpen(false); setScreen("body-weight") }}
+   />
 
   if (screen === "workout") {
     return <WorkoutScreen onBack={() => setScreen("home")} menu={workoutMenu} registeredExercises={registeredExercises} saving={workoutSaving} error={workoutSaveError} restEnabled={restEnabled} restDuration={restSeconds} onSave={saveWorkoutSession} />
@@ -1912,7 +1984,7 @@ export default function App() {
     return <QuickRecordScreen onBack={() => setScreen("home")} teams={teamWorkspaces} exercises={registeredExercises} onLoadPreviousSet={loadPreviousSet} onSaveRecord={saveQuickRecord} />
   }
   if (screen === "history") {
-    return <><HistoryScreen onHome={() => { setActiveTab("home"); setScreen("home") }} onQuick={openRecordChooser} onSettings={() => setScreen("settings")} records={historyRecords} loading={historyLoading} error={historyError} onRetry={() => void loadHistory()} onDelete={deleteHistoryRecord} onUpdateQuick={updateQuickHistoryRecord} onGrowth={() => setScreen("growth")} />{recordChooser}</>
+    return <><HistoryScreen onHome={() => { setActiveTab("home"); setScreen("home") }} onQuick={openRecordChooser} onSettings={() => setScreen("settings")} records={historyRecords} loading={historyLoading} error={historyError} onRetry={() => void loadHistory()} onDelete={deleteHistoryRecord} onUpdateQuick={updateQuickHistoryRecord} onGrowth={() => setScreen("growth")} userId={user.id} />{recordChooser}</>
   }
   if (screen === "menu-list") {
     return <MenuListScreen menus={menus} loading={menuLoading} error={menuError} onRetry={() => void loadMenus()} onBack={() => setScreen(menuListBack)} onCreate={() => { setMenuError(null); setEditingMenu(undefined); setScreen("menu-editor") }} onEdit={(menu) => { setMenuError(null); setEditingMenu(menu); setScreen("menu-editor") }} onStart={(menu) => { setWorkoutMenu(menu); setScreen("workout") }} />
@@ -2067,9 +2139,9 @@ export default function App() {
   }} onRemoveRecord={() => undefined} onUnshareRecord={unshareTeamRecord} onRemoveMember={(id) => managedTeamWorkspace ? removeTeamMember(managedTeamWorkspace.id, id) : false} onTransferOwnership={(id) => managedTeamWorkspace ? transferTeamOwnership(managedTeamWorkspace.id, id) : false} onUnsharePhoto={unshareTeamPhoto} onDeletePhoto={(id) => { const photo = growthPhotos.find((item) => item.id === id); return photo ? deleteGrowthPhoto(photo) : Promise.resolve(false) }} />
   if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setCurrentWorkspaceId(id); setScreen("home") }} onRename={async (id, name) => { const workspace = workspaces.find((item) => item.id === id); if (!workspace) return false; const { error } = await supabase.rpc("rename_workspace", { target_workspace_id: id, new_name: name }); if (error) { console.error("Workspace rename failed:", error); return false } setWorkspaces((current) => current.map((item) => item.id === id ? { ...item, name } : item)); return true }} onExit={leaveTeamWorkspace} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setTeamMembers([]); setTeamMembersWorkspaceId(null); setTeamInvitations([]); setCurrentWorkspaceId(id); setManagedTeamWorkspaceId(id); void loadTeamMembers(id).catch((error) => console.error("Team member load failed:", error)); setScreen("team-manage") }} />
   if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} memberFilter={currentTeamWorkspace ? activityFilter : undefined} onMemberFilterChange={currentTeamWorkspace ? setActivityFilter : undefined} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onSave={saveGrowthPhoto} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
-  if (screen === "body-weight") return <main style={bodyWeightPageStyle}><div style={bodyWeightContentStyle}><BodyWeightPanel userId={user.id} onBack={() => setScreen("settings")} /></div></main>
+  if (screen === "body-weight") return <main style={bodyWeightPageStyle}><div style={bodyWeightContentStyle}><BodyWeightPanel userId={user.id} onBack={() => setScreen(chooserCaller)} /></div></main>
   if (screen === "settings") {
-    return <><SettingsScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onHistory={() => setScreen("history")} onBodyWeight={() => setScreen("body-weight")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onWorkspaceManager={() => setScreen("workspace-manager")} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
+    return <><SettingsScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onWorkspaceManager={() => setScreen("workspace-manager")} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
       setAcceptingInvitationId(id)
       setIncomingInvitationError(null)
       const { error } = await supabase.rpc("accept_team_invitation", { invitation_id: id })

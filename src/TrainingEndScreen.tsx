@@ -1,4 +1,5 @@
 import { useState } from "react"
+import Spinner from "./Spinner";
 import type { WorkoutExercise } from "./WorkoutScreen"
 
 
@@ -49,7 +50,7 @@ export default function TrainingEndScreen({ exercises, initialExerciseIds, menuN
       {error && <p role="alert" style={errorStyle}>{error}</p>}
       {addedExercises.length > 0 && <><p style={sectionLabel}>メニューへ追加</p><section style={cardStyle}>{addedExercises.map((exercise, index) => <div key={exercise.id} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: index < addedExercises.length - 1 ? 16 : 0, marginBottom: index < addedExercises.length - 1 ? 16 : 0, borderBottom: index < addedExercises.length - 1 ? "1px solid #242424" : "none" }}><div style={{ flex: 1 }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{exercise.name}</p><p style={{ color: "#777", fontSize: 12 }}>この種目を「胸トレ」に追加しますか？</p></div><div style={{ display: "flex", border: "1px solid #333", borderRadius: 8, overflow: "hidden" }}><button onClick={() => setAddToMenu((value) => ({ ...value, [exercise.id]: true }))} style={choiceStyle(addToMenu[exercise.id])}>追加する</button><button onClick={() => setAddToMenu((value) => ({ ...value, [exercise.id]: false }))} style={choiceStyle(!addToMenu[exercise.id])}>しない</button></div></div>)}</section></>}
     </div>
-    <footer style={{ position: "absolute", bottom: 0, width: "100%", display: "flex", gap: 10, padding: "14px 24px 28px", backgroundColor: "#0d0d0d", borderTop: "1px solid #1e1e1e" }}><button onClick={onReturn} disabled={saving} style={{ ...buttonStyle, flex: 1, backgroundColor: "#202020", border: "1px solid #333", color: "#ddd", opacity: saving ? .5 : 1 }}>トレーニングに戻る</button><button onClick={() => void save()} disabled={saving} style={{ ...buttonStyle, flex: 1.15, opacity: saving ? .5 : 1 }}>{saving ? "保存中..." : "保存して終了"}</button></footer>
+    <footer style={{ position: "absolute", bottom: 0, width: "100%", display: "flex", gap: 10, padding: "14px 24px 28px", backgroundColor: "#0d0d0d", borderTop: "1px solid #1e1e1e" }}><button onClick={onReturn} disabled={saving} style={{ ...buttonStyle, flex: 1, backgroundColor: "#202020", border: "1px solid #333", color: "#ddd", opacity: saving ? .5 : 1 }}>トレーニングに戻る</button><button onClick={() => void save()} disabled={saving} style={{ ...buttonStyle, flex: 1.15, opacity: saving ? .5 : 1 }}>{saving ? <Spinner>保存中...</Spinner> : "保存して終了"}</button></footer>
   </div></main>
 }
 

@@ -716,11 +716,25 @@ export default function WorkoutScreen({ onBack, onSave, menu, registeredExercise
       setExercises((prev) =>
         prev.map((ex) => {
           if (ex.id !== exId) return ex
+          // 完了時に、同じ種目の次の未完成セットへ重量を引き継ぐ（次セットが空の場合のみ）。
+          // 自重は重量が null なので carryWeight も null のまま引き継がれない。
+          let reached = false
+          let carryWeight: number | null = null
+          let carried = false
           return {
-            ...ex,
-            sets: ex.sets.map((s) =>
-              s.id === setId ? { ...s, completed: !s.completed } : s
-            ),
+             ...ex,
+           sets: ex.sets.map((s) => {
+             if (s.id === setId) {
+               reached = true
+               if (!s.completed) carryWeight = s.weight
+               return { ...s, completed: !s.completed }
+             }
+             if (reached && !carried && carryWeight !== null && !s.completed && s.weight === null) {
+               carried = true
+               return { ...s, weight: carryWeight }
+             }
+             return s
+           }),
           }
         })
       )

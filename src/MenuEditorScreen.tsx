@@ -1,4 +1,5 @@
 import { useState } from "react"
+import Spinner from "./Spinner";
 
 export type ExerciseId = string | number
 export type RegisteredExercise = { id: ExerciseId; name: string; kind: "自重" | "器具" }
@@ -33,7 +34,7 @@ export default function MenuEditorScreen({ menu, registeredExercises, saving, er
       {error && <p role="alert" style={errorStyle}>{error}</p>}
       {menu && <button onClick={() => setConfirmDelete(true)} disabled={saving} style={{ ...deleteMenuStyle, opacity: saving ? .5 : 1 }}>このメニューを削除</button>}
     </div>
-    <footer style={footerStyle}><button onClick={onBack} disabled={saving} style={{ ...saveStyle, flex: 1, background: "#202020", border: "1px solid #333", color: "#ddd", opacity: saving ? .5 : 1 }}>キャンセル</button><button disabled={!menuName.trim() || !items.length || saving} onClick={() => void save()} style={{ ...saveStyle, flex: 1.15, opacity: menuName.trim() && items.length && !saving ? 1 : 0.35 }}>{saving ? "保存中..." : "保存"}</button></footer>
+    <footer style={footerStyle}><button onClick={onBack} disabled={saving} style={{ ...saveStyle, flex: 1, background: "#202020", border: "1px solid #333", color: "#ddd", opacity: saving ? .5 : 1 }}>キャンセル</button><button disabled={!menuName.trim() || !items.length || saving} onClick={() => void save()} style={{ ...saveStyle, flex: 1.15, opacity: menuName.trim() && items.length && !saving ? 1 : 0.35 }}>{saving ? <Spinner>保存中...</Spinner> : "保存"}</button></footer>
     {confirmDelete && <div style={overlayStyle}><section style={dialogStyle}><p style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 700, marginBottom: 9 }}>メニューを削除しますか？</p><p style={{ color: "#888", fontSize: 13, lineHeight: 1.5, marginBottom: 22 }}>「{menuName}」を削除します。過去のトレーニング履歴は削除されません。</p><div style={{ display: "flex", gap: 9 }}><button onClick={() => setConfirmDelete(false)} disabled={saving} style={{ ...dialogButtonStyle, background: "#202020", color: "#ddd", opacity: saving ? .5 : 1 }}>キャンセル</button><button onClick={() => void onDelete(menu!.id)} disabled={saving} style={{ ...dialogButtonStyle, background: "#d94b4b", color: "#fff", opacity: saving ? .5 : 1 }}>{saving ? "削除中..." : "削除する"}</button></div></section></div>}
   </div></main>
 }

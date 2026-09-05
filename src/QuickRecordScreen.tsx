@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import Spinner from "./Spinner";
 import type { RegisteredExercise } from "./MenuEditorScreen"
 
 export type QuickRecordSaveData = {
@@ -32,7 +33,10 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onLoadPrev
 
   useEffect(() => {
     if (editingReps) repsRef.current?.select()
-  }, [editingReps])
+    }, [editingReps])
+   useEffect(() => {
+     if (teams.length === 0 && shareTo === "team") setShareTo("private")
+     }, [teams.length, shareTo])
 
   async function save() {
     if (!canSave) return
@@ -104,7 +108,7 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onLoadPrev
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#777" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showExercises ? "rotate(180deg)" : "none" }}><path d="M6 9l6 6 6-6" /></svg>
           </button>
           {showExercises && <div style={{ marginTop: 8, border: "1px solid #2a2a2a", borderRadius: 12, overflow: "hidden", backgroundColor: "#171717" }}>
-            {exercises.map((item) => <button key={item.id} onClick={() => void selectExercise(item)} style={{ width: "100%", padding: "14px 16px", background: item.name === exercise ? "#202020" : "transparent", border: "none", borderBottom: "1px solid #242424", textAlign: "left", color: item.name === exercise ? "#c8ff00" : "#ccc", fontSize: 14, cursor: "pointer" }}>{item.name}</button>)}
+              {exercises.map((item) => <button key={item.id} onClick={() => void selectExercise(item)} style={{ width: "100%", padding: "14px 16px", background: item.name === exercise ? "#202020" : "transparent", border: "none", borderBottom: "1px solid #242424", textAlign: "left", color: item.name === exercise ? "#c8ff00" : "#ccc", fontSize: 14, cursor: "pointer" }}>{item.name}<small style={{ color: "#777", marginLeft: 8 }}>{item.kind}</small></button>)}
           </div>}
 
           <div style={{ height: 28 }} />
@@ -129,14 +133,24 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onLoadPrev
           <Label>共有先</Label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <ShareOption active={shareTo === "private"} onClick={() => setShareTo("private")} title="自分のみ" detail="非公開で記録" icon="lock" />
-            <ShareOption active={shareTo === "team"} onClick={() => setShareTo("team")} title="チーム" detail="メンバーに共有" icon="team" />
+              <ShareOption active={shareTo === "team"} onClick={() => setShareTo("team")} title="チーム" detail="メンバーに共有" icon="team" disabled={teams.length === 0} />
           </div>
-          {shareTo === "team" && (teams.length ? <select value={team} onChange={(event) => setTeam(event.target.value)} style={{ ...fieldStyle, marginTop: 10, appearance: "none", color: "#f0f0f0", cursor: "pointer" }}>{teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <p style={{ color: "#d7a66d", fontSize: 12, marginTop: 10 }}>共有できるチームがありません</p>)}
+            {shareTo === "team" && teams.length > 0 && <select value={team} onChange={(event) => setTeam(event.target.value)} style={{ ...fieldStyle, marginTop: 10, appearance: "none", color: "#f0f0f0", cursor: "pointer" }}>{teams.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+            {teams.length === 0 && <p style={{ color: "#777", fontSize: 11, marginTop: 10 }}>チームを登録すると共有できます</p>}
           {saveError && <p role="alert" style={{ color: "#f09a9a", fontSize: 12, lineHeight: 1.5, marginTop: 20 }}>{saveError}</p>}
         </div>
 
         <footer style={{ position: "absolute", bottom: 0, width: "100%", padding: "14px 24px 28px", background: "#0d0d0d", borderTop: "1px solid #1e1e1e" }}>
-          <button disabled={!canSave || saving} onClick={() => void save()} style={{ ...saveButtonStyle, opacity: canSave && !saving ? 1 : 0.35, cursor: canSave && !saving ? "pointer" : "not-allowed" }}>{saving ? "保存中..." : "記録を保存"}</button>
+          {!canSave && !saving && (
+            <p style={{ margin: 0, paddingBottom: 10, color: "#777", fontSize: 11, textAlign: "center" }}>
+            {!exerciseId
+              ? "種目を選択してください"
+              : reps <= 0
+                ? "回数を入力してください"
+                   : "チームを登録すると共有できます"}
+          </p>
+       )}
+       <button disabled={!canSave || saving} onClick={() => void save()} style={{ ...saveButtonStyle, opacity: canSave && !saving ? 1 : 0.35, cursor: canSave && !saving ? "pointer" : "not-allowed" }}>{saving ? <Spinner>保存中...</Spinner> : "記録を保存"}</button>
         </footer>
       </div>
     </main>
@@ -144,7 +158,7 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onLoadPrev
 }
 
 function Label({ children }: { children: React.ReactNode }) { return <p style={{ fontFamily: "Outfit", color: "#aaa", fontSize: 13, fontWeight: 600, marginBottom: 10 }}>{children}</p> }
-function ShareOption({ active, onClick, title, detail, icon }: { active: boolean; onClick: () => void; title: string; detail: string; icon: "lock" | "team" }) { return <button onClick={onClick} style={{ background: active ? "#1b2110" : "#171717", border: `1px solid ${active ? "#c8ff00" : "#2a2a2a"}`, borderRadius: 14, padding: "15px 12px", color: "#f0f0f0", cursor: "pointer", textAlign: "left" }}><div style={{ color: active ? "#c8ff00" : "#777", marginBottom: 12 }}>{icon === "lock" ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 018 0v3" /></svg> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><path d="M17 11a3 3 0 100-6M21 20c0-2.5-1.5-4.7-3.7-5.6" /></svg>}</div><p style={{ fontFamily: "Outfit", fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{title}</p><p style={{ color: "#777", fontSize: 11 }}>{detail}</p></button> }
+function ShareOption({ active, onClick, title, detail, icon, disabled }: { active: boolean; onClick: () => void; title: string; detail: string; icon: "lock" | "team"; disabled?: boolean }) { return <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{ background: active ? "#1b2110" : "#171717", border: `1px solid ${active ? "#c8ff00" : "#2a2a2a"}`, borderRadius: 14, padding: "15px 12px", color: "#f0f0f0", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1, textAlign: "left" }}><div style={{ color: active ? "#c8ff00" : "#777", marginBottom: 12 }}>{icon === "lock" ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 018 0v3" /></svg> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><path d="M17 11a3 3 0 100-6M21 20c0-2.5-1.5-4.7-3.7-5.6" /></svg>}</div><p style={{ fontFamily: "Outfit", fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{title}</p><p style={{ color: "#777", fontSize: 11 }}>{detail}</p></button> }
 
 const pageStyle = { minHeight: "100vh", backgroundColor: "#000", display: "flex", justifyContent: "center" } as const
 const contentStyle = { width: "100%", maxWidth: 430, minHeight: "100vh", position: "relative", display: "flex", flexDirection: "column", backgroundColor: "#0d0d0d" } as const

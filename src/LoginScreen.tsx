@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react"
+import Spinner from "./Spinner";
 import { supabase } from "./lib/supabase"
 
 type AuthMode = "login" | "signup"
@@ -16,6 +17,12 @@ export default function LoginScreen() {
     setSubmitting(true)
     setErrorMessage("")
     setMessage("")
+
+    if (!email.trim() || !password.trim()) {
+      setSubmitting(false)
+      setErrorMessage("メールアドレスとパスワードを入力してください。")
+      return
+    }
 
     const result = mode === "login"
       ? await supabase.auth.signInWithPassword({ email, password })
@@ -84,11 +91,11 @@ export default function LoginScreen() {
           />
 
           <button type="submit" disabled={submitting} style={{ ...submitStyle, opacity: submitting ? 0.6 : 1 }}>
-            {submitting
-              ? "処理中..."
-              : mode === "login"
-                ? "ログイン"
-                : "アカウントを作成"}
+                {submitting
+                  ? <Spinner>処理中...</Spinner>
+                  : mode === "login"
+                    ? "ログイン"
+                    : "アカウントを作成"}
           </button>
         </form>
 

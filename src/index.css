@@ -34,3 +34,7 @@ body {
 ::-webkit-scrollbar { display: none; }
 * { scrollbar-width: none; }
 
+@keyframes ll-spin {
+  to { transform: rotate(360deg); }
+}
+
