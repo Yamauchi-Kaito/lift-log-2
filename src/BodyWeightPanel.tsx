@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { supabase } from "./lib/supabase"
+import type { GrowthPhotoDraft } from "./GrowthScreen"
 
 type WeightRecord = {
     id: string
@@ -10,7 +11,7 @@ type WeightRecord = {
 
 type GoalType = "cut" | "maintain" | "bulk"
 
-export default function BodyWeightPanel({ userId, onBack }: { userId: string; onBack?: () => void }) {
+export default function BodyWeightPanel({ userId, onBack, teamAvailable, onSavePhoto }: { userId: string; onBack?: () => void; teamAvailable?: boolean; onSavePhoto?: (draft: GrowthPhotoDraft) => Promise<boolean> }) {
     const [records, setRecords] = useState<WeightRecord[]>([])
     const [recordedOn, setRecordedOn] = useState(localDateKey())
     const [weight, setWeight] = useState("")
@@ -22,6 +23,20 @@ export default function BodyWeightPanel({ userId, onBack }: { userId: string; on
     const [goalSaving, setGoalSaving] = useState(false)
     const [goalError, setGoalError] = useState<string | null>(null)
     const [goalMessage, setGoalMessage] = useState<string | null>(null)
+    const [photoFile, setPhotoFile] = useState<File | null>(null)
+    const [photoVisibility, setPhotoVisibility] = useState<"private" | "team">("private")
+    const [photoNote, setPhotoNote] = useState("")
+    const [photoSaving, setPhotoSaving] = useState(false)
+    const [photoMessage, setPhotoMessage] = useState<string | null>(null)
+
+    async function savePhoto() {
+        if (!photoFile || !onSavePhoto) return
+        setPhotoSaving(true); setPhotoMessage(null)
+        const ok = await onSavePhoto({ file: photoFile, visibility: photoVisibility, note: photoNote })
+        setPhotoSaving(false)
+        if (!ok) return
+        setPhotoFile(null); setPhotoNote(""); setPhotoMessage("写真を登録しました。")
+    }
 
     useEffect(() => {
         let cancelled = false
@@ -167,6 +182,15 @@ export default function BodyWeightPanel({ userId, onBack }: { userId: string; on
              <div style={titleGroup}>{onBack && <button aria-label="前の画面に戻る" onClick={onBack} style={backButton}>‹</button>}<div><p style={eyebrow}>BODY WEIGHT</p><h2 style={heading}>体重管理</h2></div></div>
              <span style={privateBadge}>自分のみ</span>
           </div>
+
+          {onSavePhoto && <div style={formBlock}>
+             <div style={formTitleRow}><p style={formTitle}>写真を記録</p><span style={hint}>体重と同じ日付の記録</span></div>
+             {photoMessage && <p role="status" style={statusMessage}>{photoMessage}</p>}
+             <label style={field}><span>写真</span><input aria-label="写真" type="file" accept="image/jpeg,image/png,image/webp" disabled={photoSaving} onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)} style={input} /></label>
+             <label style={{ ...field, marginTop: 8 }}><span>公開範囲</span><select value={photoVisibility} onChange={(event) => setPhotoVisibility(event.target.value as "private" | "team")} style={input}><option value="private">自分のみ</option>{teamAvailable && <option value="team">チームに共有</option>}</select></label>
+             <label style={{ ...field, marginTop: 8 }}><span>メモ（任意）</span><textarea value={photoNote} onChange={(event) => setPhotoNote(event.target.value)} style={{ ...input, minHeight: 70, resize: "vertical" }} /></label>
+             <button onClick={() => void savePhoto()} disabled={photoSaving || !photoFile} style={{ ...primaryButton, opacity: photoSaving || !photoFile ? .4 : 1 }}>{photoSaving ? "保存中..." : "写真を登録"}</button>
+          </div>}
 
           <div style={formBlock}>
              <div style={formTitleRow}><p style={formTitle}>記録する</p><span style={hint}>同じ日付は上書き</span></div>

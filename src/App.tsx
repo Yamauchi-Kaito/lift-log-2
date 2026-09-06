@@ -25,6 +25,8 @@ import SettingsScreen from "./SettingsScreen"
 import BodyWeightPanel from "./BodyWeightPanel"
 import type { IncomingInvitation } from "./SettingsScreen"
 import type { PersonalWorkspace, TeamWorkspace, Workspace } from "./workspace"
+import CalendarGrid from "./CalendarGrid"
+import { dateKeyFromDate, trainingDateKeys } from "./calendar"
 
 const INITIAL_WORKSPACES: Workspace[] = []
 const INITIAL_TEAM_MEMBERS: TeamMember[] = []
@@ -32,6 +34,7 @@ const filterChipStyle = { flexShrink: 0, padding: "7px 11px", border: "1px solid
 const displayNameFallback = "ユーザー"
 const bodyWeightPageStyle = { minHeight: "100vh", display: "flex", justifyContent: "center", background: "#000" } as const
 const bodyWeightContentStyle = { width: "100%", maxWidth: 430, minHeight: "100vh", padding: "28px 24px 36px", boxSizing: "border-box", background: "#0d0d0d" } as const
+type HistoryBodyWeight = { id: string; recordedOn: string; weightKg: number; bodyFatPercent: number | null }
 
 function displayNameOrFallback(value: string | null | undefined) {
   return value?.trim() || displayNameFallback
@@ -98,106 +101,20 @@ function WeekProgress({ done, target }: { done: number; target: number }) {
 
 type CalendarActivity = { id: string; memberId: string; day?: number; timestamp?: string }
 
-function MiniCalendar({ activities, filter, onDaySelect }: { activities: CalendarActivity[]; filter?: string[]; onDaySelect?: (day: number) => void }) {
-  const referenceDate = new Date()
-  const year = referenceDate.getFullYear()
-  const month = referenceDate.getMonth()
-  const firstDay = new Date(year, month, 1).getDay()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-
-  const cells: (number | null)[] = [
-    ...Array(firstDay).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ]
-
-  const dayLabels = ["日", "月", "火", "水", "木", "金", "土"]
-
-  return (
-    <div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(7, 1fr)",
-          marginBottom: 6,
-        }}
-      >
-        {dayLabels.map((d, i) => (
-          <div
-            key={d}
-            style={{
-              textAlign: "center",
-              fontSize: 10,
-              color: i === 0 ? "#e05555" : i === 6 ? "#4d8fff" : "#666",
-              fontWeight: 500,
-              letterSpacing: "0.05em",
-            }}
-          >
-            {d}
-          </div>
-        ))}
-      </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(7, 1fr)",
-          gap: "2px 0",
-        }}
-      >
-        {cells.map((day, idx) => {
-          if (!day) return <div key={`empty-${idx}`} />
-          const isToday = day === referenceDate.getDate()
-          const isSun = idx % 7 === 0
-          const isSat = idx % 7 === 6
-          const memberColors: Record<string, string> = {}
-          const dayActivities = activities.filter((record) => {
-            const timestamp = record.timestamp ? new Date(record.timestamp) : null
-            return record.day === day
-              && (!timestamp || (timestamp.getFullYear() === year && timestamp.getMonth() === month))
-              && (!filter?.length || filter.includes(record.memberId))
-          })
-          return (
-            <button
-              onClick={() => onDaySelect?.(day)}
-              disabled={!dayActivities.length || !onDaySelect}
-              key={day}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 3,
-                paddingTop: 3,
-                paddingBottom: 3,
-                border: "none",
-                background: "transparent",
-                cursor: dayActivities.length && onDaySelect ? "pointer" : "default",
-                paddingLeft: 0,
-                paddingRight: 0,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontFamily: "Outfit",
-                  fontWeight: isToday ? 700 : 400,
-                  color: isToday
-                    ? "#c8ff00"
-                    : isSun
-                      ? "#e05555"
-                      : isSat
-                        ? "#4d8fff"
-                        : "#888",
-                  lineHeight: 1,
-                }}
-              >
-                {day}
-              </span>
-              <div style={{ display: "flex", gap: 2, minHeight: 6, alignItems: "center" }}>{dayActivities.slice(0, 3).map((record) => <i key={record.id} style={{ width: 5, height: 5, borderRadius: "50%", background: memberColors[record.memberId] ?? "#c8ff00" }} />)}{dayActivities.length > 3 && <small style={{ color: "#888", fontSize: 8 }}>+{dayActivities.length - 3}</small>}</div>
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
+function MiniCalendar({ activities, filter, onDaySelect, disableUnmarked = false }: { activities: CalendarActivity[]; filter?: string[]; onDaySelect?: (dateKey: string) => void; disableUnmarked?: boolean }) {
+  const month = new Date()
+  const year = month.getFullYear()
+  const monthIndex = month.getMonth()
+  const markers = new Map<string, { training: boolean }>()
+  for (const activity of activities) {
+    const timestamp = activity.timestamp ? new Date(activity.timestamp) : undefined
+    if (filter?.length && !filter.includes(activity.memberId)) continue
+    if (timestamp && (timestamp.getFullYear() !== year || timestamp.getMonth() !== monthIndex)) continue
+    if (!timestamp && activity.day == null) continue
+    const key = timestamp ? dateKeyFromDate(timestamp) : dateKeyFromDate(new Date(year, monthIndex, activity.day!))
+    markers.set(key, { training: true })
+  }
+  return <CalendarGrid month={month} markers={markers} onSelectDate={onDaySelect} disableUnmarked={disableUnmarked} />
 }
 
 function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeight }: { open: boolean; onClose: () => void; onStartWorkout: () => void; onQuickRecord: () => void; onBodyWeight?: () => void }) {
@@ -536,6 +453,7 @@ export default function App() {
   const [menuSaving, setMenuSaving] = useState(false)
   const [menuError, setMenuError] = useState<string | null>(null)
   const [historyRecords, setHistoryRecords] = useState<HistoryRecord[]>([])
+  const [historyBodyWeights, setHistoryBodyWeights] = useState<HistoryBodyWeight[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [workoutSaving, setWorkoutSaving] = useState(false)
@@ -552,6 +470,7 @@ export default function App() {
   const [selectedTeamId, setSelectedTeamId] = useState<string | undefined>()
   const [activityFilter, setActivityFilter] = useState<string[]>([])
   const [selectedActivityDay, setSelectedActivityDay] = useState<number | null>(null)
+  const [historySelectedDateKey, setHistorySelectedDateKey] = useState<string | null>(null)
   const [teamMembers, setTeamMembers] = useState(INITIAL_TEAM_MEMBERS)
   const [teamMembersWorkspaceId, setTeamMembersWorkspaceId] = useState<string | null>(null)
   const [growthPhotos, setGrowthPhotos] = useState<GrowthPhoto[]>([])
@@ -606,6 +525,7 @@ export default function App() {
     setMenuSaving(false)
     setMenuError(null)
     setHistoryRecords([])
+    setHistoryBodyWeights([])
     setHistoryLoading(false)
     setHistoryError(null)
     setWorkoutSaving(false)
@@ -622,6 +542,7 @@ export default function App() {
     setSelectedTeamId(undefined)
     setActivityFilter([])
     setSelectedActivityDay(null)
+    setHistorySelectedDateKey(null)
     setTeamMembers([])
     setTeamMembersWorkspaceId(null)
     setGrowthPhotos([])
@@ -711,20 +632,37 @@ export default function App() {
 
     setHistoryLoading(true)
     setHistoryError(null)
-    const { data, error } = await supabase
-      .from("workout_sessions")
-      .select("id, type, menu_name_snapshot, started_at, ended_at, note, workout_session_shares(workspaces(name)), workout_exercises(id, exercise_name_snapshot, kind_snapshot, position, workout_sets(id, position, weight_kg, reps))")
-      .eq("owner_id", user.id)
-      .is("deleted_at", null)
-      .order("started_at", { ascending: false })
+    const [sessionsResult, weightsResult] = await Promise.all([
+      supabase
+        .from("workout_sessions")
+        .select("id, type, menu_name_snapshot, started_at, ended_at, note, workout_session_shares(workspaces(name)), workout_exercises(id, exercise_name_snapshot, kind_snapshot, position, workout_sets(id, position, weight_kg, reps))")
+        .eq("owner_id", user.id)
+        .is("deleted_at", null)
+        .order("started_at", { ascending: false }),
+      supabase
+        .from("body_weight_records")
+        .select("id, recorded_on, weight_kg, body_fat_percent")
+        .eq("user_id", user.id)
+        .order("recorded_on", { ascending: true }),
+    ])
 
     if (authenticatedUserIdRef.current !== user.id) return false
     setHistoryLoading(false)
-    if (error) {
-      console.error("Workout history load failed:", error)
+    if (sessionsResult.error) {
+      console.error("Workout history load failed:", sessionsResult.error)
       setHistoryError("履歴を読み込めませんでした。通信を確認して再試行してください。")
       return false
     }
+    if (weightsResult.error) {
+      console.error("Body weight history load failed:", weightsResult.error)
+      setHistoryError("体重記録を読み込めませんでした。通信を確認して再試行してください。")
+    }
+    setHistoryBodyWeights((weightsResult.data ?? []).map((row) => ({
+      id: String(row.id),
+      recordedOn: String(row.recorded_on),
+      weightKg: Number(row.weight_kg),
+      bodyFatPercent: row.body_fat_percent == null ? null : Number(row.body_fat_percent),
+    })))
 
     type SessionRow = {
       id: string
@@ -742,7 +680,7 @@ export default function App() {
         workout_sets: Array<{ id: string; position: number; weight_kg: number | null; reps: number }> | null
       }> | null
     }
-    const records = ((data ?? []) as SessionRow[]).map((session) => {
+    const records = ((sessionsResult.data ?? []) as SessionRow[]).map((session) => {
       const sharedWorkspace = session.workout_session_shares?.[0]?.workspaces
       const sharedWorkspaceName = Array.isArray(sharedWorkspace) ? sharedWorkspace[0]?.name : sharedWorkspace?.name
       const share = sharedWorkspaceName ? `チーム · ${sharedWorkspaceName}` : "自分のみ"
@@ -1669,6 +1607,7 @@ export default function App() {
       setWorkoutSaveError("保存しましたが、履歴を読み込めませんでした。履歴画面で再試行してください。")
       return false
     }
+    setHistorySelectedDateKey(null)
     setScreen("history")
     return true
   }
@@ -1950,7 +1889,7 @@ export default function App() {
     return <QuickRecordScreen onBack={() => setScreen("home")} teams={teamWorkspaces} exercises={registeredExercises} onLoadPreviousSet={loadPreviousSet} onSaveRecord={saveQuickRecord} />
   }
   if (screen === "history") {
-    return <><HistoryScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onSettings={() => setScreen("settings")} records={historyRecords} loading={historyLoading} error={historyError} onRetry={() => void loadHistory()} onDelete={deleteHistoryRecord} onUpdateQuick={updateQuickHistoryRecord} onGrowth={() => setScreen("growth")} userId={user.id} />{recordChooser}</>
+    return <><HistoryScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onSettings={() => setScreen("settings")} records={historyRecords} bodyWeights={historyBodyWeights} photos={growthPhotos} initialSelectedDateKey={historySelectedDateKey} loading={historyLoading} error={historyError} onRetry={() => void loadHistory()} onDelete={deleteHistoryRecord} onUpdateQuick={updateQuickHistoryRecord} userId={user.id} />{recordChooser}</>
   }
   if (screen === "menu-list") {
     return <MenuListScreen menus={menus} loading={menuLoading} error={menuError} onRetry={() => void loadMenus()} onBack={() => setScreen(menuListBack)} onCreate={() => { setMenuError(null); setEditingMenu(undefined); setScreen("menu-editor") }} onEdit={(menu) => { setMenuError(null); setEditingMenu(menu); setScreen("menu-editor") }} canStart={menuListCanStart} onStart={startWorkout} />
@@ -2105,9 +2044,9 @@ export default function App() {
   }} onRemoveRecord={() => undefined} onUnshareRecord={unshareTeamRecord} onRemoveMember={(id) => managedTeamWorkspace ? removeTeamMember(managedTeamWorkspace.id, id) : false} onTransferOwnership={(id) => managedTeamWorkspace ? transferTeamOwnership(managedTeamWorkspace.id, id) : false} onUnsharePhoto={unshareTeamPhoto} onDeletePhoto={(id) => { const photo = growthPhotos.find((item) => item.id === id); return photo ? deleteGrowthPhoto(photo) : Promise.resolve(false) }} />
   if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setCurrentWorkspaceId(id); setScreen("home") }} onRename={async (id, name) => { const workspace = workspaces.find((item) => item.id === id); if (!workspace) return false; const { error } = await supabase.rpc("rename_workspace", { target_workspace_id: id, new_name: name }); if (error) { console.error("Workspace rename failed:", error); return false } setWorkspaces((current) => current.map((item) => item.id === id ? { ...item, name } : item)); return true }} onExit={leaveTeamWorkspace} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setTeamMembers([]); setTeamMembersWorkspaceId(null); setTeamInvitations([]); setCurrentWorkspaceId(id); setManagedTeamWorkspaceId(id); void loadTeamMembers(id).catch((error) => console.error("Team member load failed:", error)); setScreen("team-manage") }} />
   if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} memberFilter={currentTeamWorkspace ? activityFilter : undefined} onMemberFilterChange={currentTeamWorkspace ? setActivityFilter : undefined} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onSave={saveGrowthPhoto} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
-  if (screen === "body-weight") return <main style={bodyWeightPageStyle}><div style={bodyWeightContentStyle}><BodyWeightPanel userId={user.id} onBack={() => setScreen(chooserCaller)} /></div></main>
+  if (screen === "body-weight") return <main style={bodyWeightPageStyle}><div style={bodyWeightContentStyle}><BodyWeightPanel userId={user.id} teamAvailable={teamWorkspaces.length > 0} onBack={() => setScreen(chooserCaller)} onSavePhoto={saveGrowthPhoto} /></div></main>
   if (screen === "settings") {
-    return <><SettingsScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setMenuListCanStart(false); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onWorkspaceManager={() => setScreen("workspace-manager")} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
+    return <><SettingsScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onHistory={() => { setHistorySelectedDateKey(null); setScreen("history") }} onMenuEditor={() => { setMenuListBack("settings"); setMenuListCanStart(false); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onWorkspaceManager={() => setScreen("workspace-manager")} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
       setAcceptingInvitationId(id)
       setIncomingInvitationError(null)
       const { error } = await supabase.rpc("accept_team_invitation", { invitation_id: id })
@@ -2148,11 +2087,19 @@ export default function App() {
   const currentMonthActivities = isTeamWorkspace
     ? teamActivities
     : historyRecords.map((record) => ({ id: String(record.id), memberId: user.id, day: record.day, timestamp: record.performedAt ?? record.normal?.startedAt }))
+  const trainingDays = trainingDateKeys(historyRecords)
   const currentMonthRecordCount = currentMonthActivities.filter((activity) => {
-    if (!activity.timestamp) return false
-    const timestamp = new Date(activity.timestamp)
-    return timestamp.getFullYear() === currentDate.getFullYear() && timestamp.getMonth() === currentDate.getMonth()
+    const key = activity.timestamp ? dateKeyFromDate(new Date(activity.timestamp)) : undefined
+    return key ? key.startsWith(`${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-`) : false
   }).length
+  const currentMonthPrefix = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-`
+  const currentMonthTrainingDayCount = isTeamWorkspace
+    ? new Set(currentMonthActivities.map((activity) => activity.timestamp ? dateKeyFromDate(new Date(activity.timestamp)) : activity.day == null ? undefined : `${currentMonthPrefix}${String(activity.day).padStart(2, "0")}`).filter((key): key is string => key !== undefined && key.startsWith(currentMonthPrefix))).size
+    : [...trainingDays].filter((key) => key.startsWith(currentMonthPrefix)).length
+  const openHistoryOnDate = (dateKey: string) => {
+    setHistorySelectedDateKey(dateKey)
+    setScreen("history")
+  }
   const currentWeekStart = new Date(currentDate)
   currentWeekStart.setHours(0, 0, 0, 0)
   currentWeekStart.setDate(currentDate.getDate() - ((currentDate.getDay() + 6) % 7))
@@ -2516,7 +2463,7 @@ export default function App() {
               <span
                 style={{ fontFamily: "Outfit", fontSize: 12, color: "#777" }}
               >
-                {currentMonthRecordCount}回 / 今月
+                {currentMonthRecordCount}回 / 今月 · 実施日 {currentMonthTrainingDayCount}日
               </span>
             </div>
             {isTeamWorkspace && <><div style={{ display: "flex", gap: 7, overflowX: "auto", marginBottom: 9, paddingBottom: 2 }}><button onClick={() => setActivityFilter([])} style={{ ...filterChipStyle, borderColor: activityFilter.length === 0 ? "#c8ff00" : "#333", color: activityFilter.length === 0 ? "#c8ff00" : "#aaa" }}>全員</button>{teamMembers.map((member) => <button key={member.id} onClick={() => setActivityFilter((current) => current.includes(member.id) ? current.filter((id) => id !== member.id) : [...current, member.id])} onDoubleClick={() => openMember(member)} title="ダブルタップで詳細" style={{ ...filterChipStyle, borderColor: activityFilter.includes(member.id) ? "#c8ff00" : "#333", color: activityFilter.includes(member.id) ? "#c8ff00" : "#aaa" }}>{member.name}</button>)}</div><div style={{ display: "flex", gap: 10, overflowX: "auto", marginBottom: 10 }}>{teamMembers.map((member) => <button key={member.id} onClick={() => openMember(member)} style={{ display: "flex", alignItems: "center", gap: 4, padding: 0, border: "none", background: "transparent", color: "#888", fontSize: 10, whiteSpace: "nowrap", cursor: "pointer" }}><i style={{ width: 6, height: 6, borderRadius: "50%", background: "#c8ff00" }} />{member.name}</button>)}</div></>}
@@ -2528,10 +2475,10 @@ export default function App() {
                 padding: "16px 16px 12px",
               }}
             >
-              <MiniCalendar activities={currentMonthActivities} filter={isTeamWorkspace ? activityFilter : undefined} onDaySelect={isTeamWorkspace ? setSelectedActivityDay : undefined} />
+              <MiniCalendar activities={currentMonthActivities} filter={isTeamWorkspace ? activityFilter : undefined} onDaySelect={isTeamWorkspace ? (dateKey) => setSelectedActivityDay(Number(dateKey.slice(-2))) : openHistoryOnDate} disableUnmarked={isTeamWorkspace} />
             </div>
           </div>
-          {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>最近の活動</p><button onClick={() => setScreen("history")} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>もっと見る</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredRecentActivities.slice(0, 3).map((activity, index) => activity.kind === "photo" ? <button key={activity.id} onClick={() => setScreen("growth")} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "10px 16px", border: "none", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><img src={activity.photo.imageUrl} alt="" style={{ width: 38, height: 48, borderRadius: 5, objectFit: "cover", background: "#202020" }} /><span style={{ flex: 1 }}><strong style={{ display: "block", fontFamily: "Outfit", fontSize: 14 }}>{activity.member}</strong><small style={{ display: "block", marginTop: 4, color: "#aaa", fontSize: 12 }}>成長記録を共有 · {activity.when}</small></span></button> : <div key={activity.id} style={{ padding: "14px 16px", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}><button onClick={() => openMember(teamMembers.find((member) => member.id === activity.memberId)!)} style={{ padding: 0, border: "none", background: "transparent", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{activity.member}</button><span style={{ color: "#777", fontFamily: "Inter", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>{activity.when}</span></p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{activity.exercise} · {activity.weight ? `${activity.weight}kg × ` : ""}{activity.reps}回</p></div>)}</div></div>}
+          {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>最近の活動</p><button onClick={() => { setHistorySelectedDateKey(null); setScreen("history") }} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>もっと見る</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredRecentActivities.slice(0, 3).map((activity, index) => activity.kind === "photo" ? <button key={activity.id} onClick={() => setScreen("growth")} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "10px 16px", border: "none", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><img src={activity.photo.imageUrl} alt="" style={{ width: 38, height: 48, borderRadius: 5, objectFit: "cover", background: "#202020" }} /><span style={{ flex: 1 }}><strong style={{ display: "block", fontFamily: "Outfit", fontSize: 14 }}>{activity.member}</strong><small style={{ display: "block", marginTop: 4, color: "#aaa", fontSize: 12 }}>成長記録を共有 · {activity.when}</small></span></button> : <div key={activity.id} style={{ padding: "14px 16px", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}><button onClick={() => openMember(teamMembers.find((member) => member.id === activity.memberId)!)} style={{ padding: 0, border: "none", background: "transparent", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{activity.member}</button><span style={{ color: "#777", fontFamily: "Inter", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>{activity.when}</span></p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{activity.exercise} · {activity.weight ? `${activity.weight}kg × ` : ""}{activity.reps}回</p></div>)}</div></div>}
 
           {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500, marginBottom: 14 }}>メンバー</p><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{teamMembers.map((member, index) => <button key={member.id} onClick={() => openMember(member)} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "13px 16px", border: "none", borderBottom: index < teamMembers.length - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><i style={{ width: 7, height: 7, borderRadius: "50%", background: "#c8ff00" }} /><span style={{ flex: 1, fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{member.name}</span><span style={{ color: "#777", fontSize: 12 }}>今週 {member.weeklyCount}回</span><span style={{ color: "#666", fontSize: 18 }}>›</span></button>)}</div></div>}
           {selectedActivityDay && <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "rgba(0,0,0,.7)" }}><section style={{ width: "100%", maxWidth: 360, padding: 20, border: "1px solid #333", borderRadius: 16, background: "#171717" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h2 style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 700 }}>{currentMonthLabel}{selectedActivityDay}日</h2><button onClick={() => setSelectedActivityDay(null)} style={{ border: "none", background: "transparent", color: "#aaa", fontSize: 20, cursor: "pointer" }}>×</button></div>{filteredActivities.filter((record) => record.day === selectedActivityDay).map((record) => <div key={record.id} style={{ padding: "12px 0", borderTop: "1px solid #282828" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{record.member}</p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{record.exercise} · {record.weight ? `${record.weight}kg × ` : ""}{record.reps}回</p></div>)}</section></div>}
@@ -2653,7 +2600,7 @@ export default function App() {
 
           {/* 履歴 */}
           <button
-            onClick={() => setScreen("history")}
+            onClick={() => { setHistorySelectedDateKey(null); setScreen("history") }}
             aria-current={activeTab === "history" ? "page" : undefined}
             style={{
               flex: 1,

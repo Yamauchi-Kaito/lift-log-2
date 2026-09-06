@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
 import Spinner from "./Spinner";
 import { supabase } from "./lib/supabase"
+import CalendarGrid from "./CalendarGrid"
+import { dateFromKey, trainingDateKey, trainingDateKeys } from "./calendar"
+import type { GrowthPhoto } from "./GrowthScreen"
 
 export type HistoryExercise = { id: string; name: string; kind: string; position: number; sets: { id: string; position: number; weightKg: number | null; reps: number }[] }
 export type HistoryRecord = { id: string | number; date: string; day: number; title: string; result: string; sets: string; duration: string; share: string; quick?: boolean; performedAt?: string; normal?: { startedAt: string; endedAt: string; note: string | null; exercises: HistoryExercise[] } }
@@ -10,31 +13,42 @@ type GoalType = "cut" | "maintain" | "bulk"
 type RangeKey = "7d" | "30d" | "90d" | "all"
 type WeightGoal = { targetWeightKg: number | null; goalType: GoalType }
 
-export default function HistoryScreen({ onHome, onQuick, onSettings, records, loading, error, onRetry, onDelete, onUpdateQuick, onGrowth, userId }: { onHome: () => void; onQuick: () => void; onSettings: () => void; records: HistoryRecord[]; loading: boolean; error: string | null; onRetry: () => void; onDelete: (id: string | number) => Promise<string | null>; onUpdateQuick: (id: string | number, changes: HistoryQuickRecordChanges) => Promise<string | null>; onGrowth: () => void; userId: string }) {
-  const [selectedDay, setSelectedDay] = useState<number | null>(null)
+export default function HistoryScreen({ onHome, onQuick, onSettings, records, bodyWeights, photos, initialSelectedDateKey, loading, error, onRetry, onDelete, onUpdateQuick, userId }: { onHome: () => void; onQuick: () => void; onSettings: () => void; records: HistoryRecord[]; bodyWeights: BodyWeightRecord[]; photos: GrowthPhoto[]; initialSelectedDateKey?: string | null; loading: boolean; error: string | null; onRetry: () => void; onDelete: (id: string | number) => Promise<string | null>; onUpdateQuick: (id: string | number, changes: HistoryQuickRecordChanges) => Promise<string | null>; userId: string }) {
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(initialSelectedDateKey ?? null)
   const [detail, setDetail] = useState<HistoryRecord | null>(null)
-  const calendarDate = records[0]?.performedAt ? new Date(records[0].performedAt) : records[0]?.normal ? new Date(records[0].normal.startedAt) : new Date()
+  useEffect(() => {
+    setSelectedDateKey(initialSelectedDateKey ?? null)
+  }, [initialSelectedDateKey])
+  const firstRecordDate = records[0]?.performedAt ? new Date(records[0].performedAt) : records[0]?.normal ? new Date(records[0].normal.startedAt) : new Date()
+  const [calendarDate, setCalendarDate] = useState(() => initialSelectedDateKey ? dateFromKey(initialSelectedDateKey) : firstRecordDate)
+  useEffect(() => {
+    setCalendarDate(selectedDateKey ? dateFromKey(selectedDateKey) : firstRecordDate)
+  }, [selectedDateKey, records])
   const calendarYear = calendarDate.getFullYear()
   const calendarMonth = calendarDate.getMonth()
-  const calendarFirstDay = new Date(calendarYear, calendarMonth, 1).getDay()
-  const calendarDayCount = new Date(calendarYear, calendarMonth + 1, 0).getDate()
   const calendarMonthLabel = `${calendarYear}年${calendarMonth + 1}月`
-  const monthRecords = records.filter((record) => { const timestamp = record.performedAt ?? record.normal?.startedAt; if (!timestamp) return false; const date = new Date(timestamp); return date.getFullYear() === calendarYear && date.getMonth() === calendarMonth })
-  const trainingDays = new Set(monthRecords.map((record) => record.day))
-  const visible = selectedDay ? records.filter((record) => record.day === selectedDay) : records
+  const trainingDays = trainingDateKeys(records)
+  const markers = new Map<string, { training?: boolean; weight?: boolean; photo?: boolean }>()
+  for (const key of trainingDays) markers.set(key, { ...markers.get(key), training: true })
+  for (const weight of bodyWeights) markers.set(weight.recordedOn, { ...markers.get(weight.recordedOn), weight: true })
+  for (const photo of photos) markers.set(photo.dateKey, { ...markers.get(photo.dateKey), photo: true })
+  const visible = selectedDateKey ? records.filter((record) => trainingDateKey(record) === selectedDateKey) : records
+  const visibleWeights = selectedDateKey ? bodyWeights.filter((record) => record.recordedOn === selectedDateKey) : []
+  const visiblePhotos = selectedDateKey ? photos.filter((photo) => photo.dateKey === selectedDateKey) : []
+  const hasSelectedRecords = visible.length > 0 || visibleWeights.length > 0 || visiblePhotos.length > 0
   if (detail) return <HistoryDetail record={detail} onBack={() => setDetail(null)} onHome={onHome} onQuick={onQuick} onSettings={onSettings} onDelete={onDelete} onUpdateQuick={onUpdateQuick} />
 
   return <main style={pageStyle}><div style={contentStyle}>
     <div style={{ flex: 1, overflowY: "auto", paddingBottom: 92 }}>
-      <header style={{ padding: "48px 24px 22px" }}><p style={eyebrowStyle}>PERSONAL HISTORY</p><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><h1 style={{ fontFamily: "Outfit", fontSize: 25, fontWeight: 700 }}>履歴</h1><button onClick={onGrowth} style={{ padding: "8px 10px", border: "1px solid #3e4d00", borderRadius: 8, background: "#1b2500", color: "#c8ff00", fontFamily: "Inter", fontSize: 11, cursor: "pointer" }}>写真の成長記録</button></div></header>
+      <header style={{ padding: "48px 24px 22px" }}><p style={eyebrowStyle}>PERSONAL HISTORY</p><h1 style={{ fontFamily: "Outfit", fontSize: 25, fontWeight: 700 }}>履歴</h1></header>
       {error && <div role="alert" style={errorStyle}><p>{error}</p><button onClick={onRetry} style={retryStyle}>再試行</button></div>}
       <section style={{ margin: "0 24px", padding: "17px 16px 13px", backgroundColor: "#171717", border: "1px solid #2a2a2a", borderRadius: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600 }}>{calendarMonthLabel}</p>{selectedDay && <button onClick={() => setSelectedDay(null)} style={{ background: "none", border: "none", color: "#c8ff00", fontFamily: "Inter", fontSize: 11, cursor: "pointer" }}>すべて表示</button>}</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 7 }}>{["日", "月", "火", "水", "木", "金", "土"].map((day, index) => <span key={day} style={{ textAlign: "center", color: index === 0 ? "#b35b5b" : index === 6 ? "#5b82b3" : "#666", fontSize: 10 }}>{day}</span>)}</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "3px 0" }}>{Array.from({ length: calendarFirstDay + calendarDayCount }, (_, index) => { const date = index - calendarFirstDay + 1; if (date < 1 || date > calendarDayCount) return <div key={`empty-${index}`} />; const trained = trainingDays.has(date); const selected = selectedDay === date; return <button key={date} onClick={() => setSelectedDay(selected ? null : date)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 0", border: "none", background: "transparent", color: selected ? "#0d0d0d" : trained ? "#ddd" : "#666", cursor: "pointer" }}><span style={{ width: 23, height: 23, display: "grid", placeItems: "center", borderRadius: "50%", backgroundColor: selected ? "#c8ff00" : "transparent", fontFamily: "Outfit", fontSize: 12, fontWeight: selected ? 700 : 400 }}>{date}</span><i style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: trained ? "#c8ff00" : "transparent" }} /></button> })}</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><button type="button" onClick={() => setCalendarDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} style={monthButton}>‹</button><p style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600 }}>{calendarMonthLabel}</p><div style={{ display: "flex", alignItems: "center", gap: 7 }}><button type="button" onClick={() => setCalendarDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} style={monthButton}>›</button>{selectedDateKey && <button onClick={() => setSelectedDateKey(null)} style={{ background: "none", border: "none", color: "#c8ff00", fontFamily: "Inter", fontSize: 11, cursor: "pointer" }}>すべて表示</button>}</div></div>
+        <CalendarGrid month={calendarDate} markers={markers} selectedDateKey={selectedDateKey} onSelectDate={(dateKey) => setSelectedDateKey((current) => current === dateKey ? null : dateKey)} />
+        <div style={calendarLegend}><span><i style={{ ...legendDot, background: "#c8ff00" }} />トレーニング</span><span><i style={{ ...legendDot, background: "#f0f0f0" }} />体重</span><span><i style={{ ...legendDot, background: "#a98cff" }} />写真</span></div>
       </section>
-      <section style={{ padding: "28px 24px 0" }}><p style={eyebrowStyle}>{selectedDay ? `${calendarMonth + 1}月${selectedDay}日の記録` : "すべての記録"}</p>{loading ? <p style={statusStyle}>読み込み中...</p> : visible.length === 0 ? <p style={{ color: "#777", fontSize: 14, padding: "28px 0", textAlign: "center" }}>この日の記録はありません</p> : <div>{visible.map((record, index) => <div key={record.id}>{(index === 0 || visible[index - 1].date !== record.date) && <p style={{ fontFamily: "Outfit", color: "#aaa", fontSize: 14, fontWeight: 600, margin: index ? "24px 0 10px" : "0 0 10px" }}>{record.date}</p>}<button onClick={() => setDetail(record)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "15px", backgroundColor: "#171717", border: "1px solid #2a2a2a", borderRadius: 14, color: "#f0f0f0", cursor: "pointer", textAlign: "left", marginBottom: 8 }}><div style={{ width: 35, height: 35, display: "grid", placeItems: "center", borderRadius: 9, backgroundColor: record.quick ? "#202020" : "#1b2500", color: record.quick ? "#aaa" : "#c8ff00", flexShrink: 0 }}>{record.quick ? "⚡" : "✓"}</div><div style={{ flex: 1, minWidth: 0 }}><div style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 4 }}><span style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600 }}>{record.title}</span>{record.quick && <span style={{ color: "#888", fontSize: 10, border: "1px solid #333", borderRadius: 4, padding: "2px 4px" }}>クイック</span>}</div><p style={{ color: "#ccc", fontFamily: "Outfit", fontSize: 13 }}>{record.result}<span style={{ color: "#666", fontFamily: "Inter", fontSize: 11 }}>　{record.quick && record.performedAt ? new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit" }).format(new Date(record.performedAt)) : `${record.sets} · ${record.duration}`}</span></p><p style={{ color: "#777", fontSize: 11, marginTop: 5 }}>{record.share}</p></div><span style={{ color: "#555" }}>›</span></button></div>)}</div>}</section>
-        <BodyWeightStats userId={userId} />
+      <section style={{ padding: "28px 24px 0" }}><p style={eyebrowStyle}>{selectedDateKey ? `${calendarMonth + 1}月${calendarDate.getDate()}日の記録` : "すべての記録"}</p>{loading ? <p style={statusStyle}>読み込み中...</p> : !hasSelectedRecords ? <p style={{ color: "#777", fontSize: 14, padding: "28px 0", textAlign: "center" }}>この日の記録はありません</p> : <><div>{visible.map((record, index) => <div key={record.id}>{(index === 0 || visible[index - 1].date !== record.date) && <p style={{ fontFamily: "Outfit", color: "#aaa", fontSize: 14, fontWeight: 600, margin: index ? "24px 0 10px" : "0 0 10px" }}>{record.date}</p>}<button onClick={() => setDetail(record)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "15px", backgroundColor: "#171717", border: "1px solid #2a2a2a", borderRadius: 14, color: "#f0f0f0", cursor: "pointer", textAlign: "left", marginBottom: 8 }}><div style={{ width: 35, height: 35, display: "grid", placeItems: "center", borderRadius: 9, backgroundColor: record.quick ? "#202020" : "#1b2500", color: record.quick ? "#aaa" : "#c8ff00", flexShrink: 0 }}>{record.quick ? "⚡" : "✓"}</div><div style={{ flex: 1, minWidth: 0 }}><div style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 4 }}><span style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600 }}>{record.title}</span>{record.quick && <span style={{ color: "#888", fontSize: 10, border: "1px solid #333", borderRadius: 4, padding: "2px 4px" }}>クイック</span>}</div><p style={{ color: "#ccc", fontFamily: "Outfit", fontSize: 13 }}>{record.result}<span style={{ color: "#666", fontFamily: "Inter", fontSize: 11 }}>　{record.quick && record.performedAt ? new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit" }).format(new Date(record.performedAt)) : `${record.sets} · ${record.duration}`}</span></p><p style={{ color: "#777", fontSize: 11, marginTop: 5 }}>{record.share}</p></div><span style={{ color: "#555" }}>›</span></button></div>)}</div>{selectedDateKey && visibleWeights.map((record) => <section key={record.id} style={{ ...cardStyle, marginTop: 8 }}><p style={sectionSmallStyle}>体重記録</p><p style={{ fontFamily: "Outfit", fontSize: 20, fontWeight: 700 }}>{record.weightKg.toFixed(1)} kg</p><p style={{ color: "#777", fontSize: 11, marginTop: 5 }}>{record.bodyFatPercent == null ? "体脂肪率 —" : `体脂肪率 ${record.bodyFatPercent.toFixed(1)}%`}</p></section>)}{selectedDateKey && visiblePhotos.length > 0 && <section style={{ ...cardStyle, marginTop: 8 }}><p style={sectionSmallStyle}>写真記録</p><div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>{visiblePhotos.map((photo) => <img key={photo.id} src={photo.imageUrl} alt={`${photo.owner}の成長記録`} style={{ width: "100%", aspectRatio: "3 / 4", objectFit: "cover", borderRadius: 8, background: "#202020" }} />)}</div></section>}</>}</section>
+        <BodyWeightStats userId={userId} records={bodyWeights} />
        </div>
        <HistoryNav onHome={onHome} onQuick={onQuick} onSettings={onSettings} />
   </div></main>
@@ -86,8 +100,7 @@ const goalLabels: Record<GoalType, string> = {
    bulk: "増量",
 }
 
-function BodyWeightStats({ userId }: { userId: string }) {
-   const [records, setRecords] = useState<BodyWeightRecord[]>([])
+function BodyWeightStats({ userId, records }: { userId: string; records: BodyWeightRecord[] }) {
    const [goal, setGoal] = useState<WeightGoal>({ targetWeightKg: null, goalType: "maintain" })
    const [range, setRange] = useState<RangeKey>("30d")
    const [error, setError] = useState<string | null>(null)
@@ -96,29 +109,12 @@ function BodyWeightStats({ userId }: { userId: string }) {
       let cancelled = false
       async function load() {
          setError(null)
-         const [recordsResult, goalResult] = await Promise.all([
-            supabase
-                  .from("body_weight_records")
-                  .select("id, recorded_on, weight_kg, body_fat_percent")
-                  .eq("user_id", userId)
-                  .order("recorded_on", { ascending: true }),
-            supabase
+         const goalResult = await supabase
                   .from("body_weight_goals")
                   .select("target_weight_kg, goal_type")
                   .eq("user_id", userId)
-                  .maybeSingle(),
-          ])
+                  .maybeSingle()
          if (cancelled) return
-         if (recordsResult.error) {
-            setError(`体重記録を読み込めませんでした: ${recordsResult.error.message}`)
-            return
-          }
-         setRecords((recordsResult.data ?? []).map((row) => ({
-            id: String(row.id),
-            recordedOn: String(row.recorded_on),
-            weightKg: Number(row.weight_kg),
-            bodyFatPercent: row.body_fat_percent == null ? null : Number(row.body_fat_percent),
-          })))
          if (goalResult.error) {
             setError((current) => current ?? `目標を読み込めませんでした: ${goalResult.error.message}`)
           } else if (goalResult.data) {
@@ -257,8 +253,11 @@ const dialogBackdropStyle = { position: "fixed", inset: 0, zIndex: 20, display: 
 const dialogStyle = { width: "100%", maxWidth: 360, padding: 22, border: "1px solid #333", borderRadius: 16, backgroundColor: "#171717" } as const
 const dialogButtonStyle = { flex: 1, height: 46, border: "none", borderRadius: 10, fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer" } as const
 const statusStyle = { color: "#888", fontSize: 14, padding: "28px 0", textAlign: "center" } as const
+const monthButton = { width: 24, height: 24, border: "1px solid #333", borderRadius: 6, background: "#202020", color: "#aaa", fontFamily: "Outfit", fontSize: 18, lineHeight: 1, cursor: "pointer" } as const
 const errorStyle = { margin: "0 24px 18px", padding: 12, border: "1px solid #5a3030", borderRadius: 9, backgroundColor: "#281818", color: "#f09a9a", fontSize: 12, lineHeight: 1.5 } as const
 const retryStyle = { marginTop: 9, padding: "7px 10px", border: "1px solid #7a4242", borderRadius: 7, background: "transparent", color: "#f3b0b0", fontFamily: "Inter", fontSize: 12, cursor: "pointer" } as const
+const calendarLegend = { display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10, color: "#777", fontSize: 10 } as const
+const legendDot = { display: "inline-block", width: 5, height: 5, marginRight: 4, borderRadius: "50%" } as const
 const bwMetrics = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 } as React.CSSProperties
 const bwMetric = { display: "flex", flexDirection: "column", gap: 4, padding: "12px 0", borderLeft: "1px solid #2a2a2a", paddingLeft: 12 } as React.CSSProperties
 const bwMetricLabel = { color: "#888", fontFamily: "Inter", fontSize: 10 } as React.CSSProperties
