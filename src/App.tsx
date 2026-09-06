@@ -33,7 +33,7 @@ const INITIAL_TEAM_MEMBERS: TeamMember[] = []
 const filterChipStyle = { flexShrink: 0, padding: "7px 11px", border: "1px solid", borderRadius: 15, background: "#202020", fontFamily: "Inter", fontSize: 11, cursor: "pointer" } as const
 const displayNameFallback = "ユーザー"
 const bodyWeightPageStyle = { minHeight: "100vh", display: "flex", justifyContent: "center", background: "#000" } as const
-const bodyWeightContentStyle = { width: "100%", maxWidth: 430, minHeight: "100vh", padding: "28px 24px 36px", boxSizing: "border-box", background: "#0d0d0d" } as const
+const bodyWeightContentStyle = { width: "100%", maxWidth: 430, minHeight: "100vh", background: "#0d0d0d" } as const
 type HistoryBodyWeight = { id: string; recordedOn: string; weightKg: number; bodyFatPercent: number | null }
 
 function displayNameOrFallback(value: string | null | undefined) {
@@ -202,6 +202,7 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeigh
             {/* Body weight */}
             <button
              onClick={() => onBodyWeight?.()}
+             aria-label="体重を記録"
              style={{
                width: "100%",
                background: "none",
@@ -269,9 +270,17 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeigh
               </div>
             </button>
 
-            <button onClick={() => onPhoto?.()} style={{ width: "100%", background: "none", border: "1px solid #2a2a2a", borderRadius: 14, padding: "18px 20px", cursor: "pointer", textAlign: "left", marginBottom: 10 }}>
-              <p style={{ fontFamily: "Outfit", fontSize: 16, fontWeight: 600, color: "#f0f0f0", marginBottom: 4 }}>写真を記録</p>
-              <p style={{ fontSize: 13, color: "#888", fontFamily: "Inter", lineHeight: 1.5 }}>カメラで撮影して保存する</p>
+            <button onClick={() => onPhoto?.()} aria-label="写真を記録" style={{ width: "100%", background: "none", border: "1px solid #2a2a2a", borderRadius: 14, padding: "18px 20px", cursor: "pointer", textAlign: "left", marginBottom: 10, display: "flex", alignItems: "flex-start", gap: 16 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: "#222", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c8ff00" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 8.5h3l1.4-2h7.2l1.4 2h3v10H4z" />
+                  <circle cx="12" cy="13.5" r="3.5" />
+                </svg>
+              </div>
+              <div>
+                <p style={{ fontFamily: "Outfit", fontSize: 16, fontWeight: 600, color: "#f0f0f0", marginBottom: 4 }}>写真を記録</p>
+                <p style={{ fontSize: 13, color: "#888", fontFamily: "Inter", lineHeight: 1.5 }}>カメラで撮影・ライブラリから追加</p>
+              </div>
             </button>
 
             {/* Quick record */}
