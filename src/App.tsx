@@ -16,7 +16,7 @@ import TeamCreateScreen from "./TeamCreateScreen"
 import WorkspaceManagerScreen from "./WorkspaceManagerScreen"
 import TeamManageScreen from "./TeamManageScreen"
 import type { TeamInvitation } from "./TeamManageScreen"
-import GrowthScreen from "./GrowthScreen"
+import GrowthScreen, { PhotoRecordScreen } from "./GrowthScreen"
 import type { GrowthPhoto, GrowthPhotoDraft } from "./GrowthScreen"
 import TeamMemberScreen from "./TeamMemberScreen"
 import type { TeamMember, SharedRecord } from "./TeamMemberScreen"
@@ -117,7 +117,7 @@ function MiniCalendar({ activities, filter, onDaySelect, disableUnmarked = false
   return <CalendarGrid month={month} markers={markers} onSelectDate={onDaySelect} disableUnmarked={disableUnmarked} />
 }
 
-function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeight }: { open: boolean; onClose: () => void; onStartWorkout: () => void; onQuickRecord: () => void; onBodyWeight?: () => void }) {
+function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeight, onPhoto }: { open: boolean; onClose: () => void; onStartWorkout: () => void; onQuickRecord: () => void; onBodyWeight?: () => void; onPhoto?: () => void }) {
   const [visible, setVisible] = useState(false)
   const [rendered, setRendered] = useState(false)
 
@@ -267,6 +267,11 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeigh
                  体重・体脂肪率を記録する
                 </p>
               </div>
+            </button>
+
+            <button onClick={() => onPhoto?.()} style={{ width: "100%", background: "none", border: "1px solid #2a2a2a", borderRadius: 14, padding: "18px 20px", cursor: "pointer", textAlign: "left", marginBottom: 10 }}>
+              <p style={{ fontFamily: "Outfit", fontSize: 16, fontWeight: 600, color: "#f0f0f0", marginBottom: 4 }}>写真を記録</p>
+              <p style={{ fontSize: 13, color: "#888", fontFamily: "Inter", lineHeight: 1.5 }}>カメラで撮影して保存する</p>
             </button>
 
             {/* Quick record */}
@@ -435,7 +440,7 @@ export default function App() {
   const [profileRefresh, setProfileRefresh] = useState(0)
   const [displayName, setDisplayName] = useState("")
   const [displayNameSaving, setDisplayNameSaving] = useState(false)
-  const [screen, setScreen] = useState<"home" | "workout" | "quick-record" | "history" | "menu-list" | "menu-editor" | "exercise-manager" | "team-create" | "team-member" | "team-manage" | "workspace-manager" | "growth" | "body-weight" | "settings">("home")
+  const [screen, setScreen] = useState<"home" | "workout" | "quick-record" | "history" | "menu-list" | "menu-editor" | "exercise-manager" | "team-create" | "team-member" | "team-manage" | "workspace-manager" | "growth" | "body-weight" | "photo-record" | "settings">("home")
   const [chooserCaller, setChooserCaller] = useState<typeof screen>("home")
   const activeTab: Tab = screen === "history" ? "history" : "home"
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
@@ -1885,6 +1890,7 @@ export default function App() {
     onStartWorkout={() => { setSheetOpen(false); setMenuListBack(chooserCaller === "settings" ? "settings" : "home"); setMenuListCanStart(true); setScreen("menu-list") }}
     onQuickRecord={() => { setSheetOpen(false); setScreen("quick-record") }}
     onBodyWeight={() => { setSheetOpen(false); setScreen("body-weight") }}
+    onPhoto={() => { setSheetOpen(false); setScreen("photo-record") }}
    />
 
   if (screen === "workout") {
@@ -2051,8 +2057,9 @@ export default function App() {
     }
   }} onRemoveRecord={() => undefined} onUnshareRecord={unshareTeamRecord} onRemoveMember={(id) => managedTeamWorkspace ? removeTeamMember(managedTeamWorkspace.id, id) : false} onTransferOwnership={(id) => managedTeamWorkspace ? transferTeamOwnership(managedTeamWorkspace.id, id) : false} onUnsharePhoto={unshareTeamPhoto} onDeletePhoto={(id) => { const photo = growthPhotos.find((item) => item.id === id); return photo ? deleteGrowthPhoto(photo) : Promise.resolve(false) }} />
   if (screen === "workspace-manager") return <WorkspaceManagerScreen workspaces={workspaces} currentId={currentWorkspace.id} onBack={() => setScreen("settings")} onSelect={(id) => { setCurrentWorkspaceId(id); setScreen("home") }} onRename={async (id, name) => { const workspace = workspaces.find((item) => item.id === id); if (!workspace) return false; const { error } = await supabase.rpc("rename_workspace", { target_workspace_id: id, new_name: name }); if (error) { console.error("Workspace rename failed:", error); return false } setWorkspaces((current) => current.map((item) => item.id === id ? { ...item, name } : item)); return true }} onExit={leaveTeamWorkspace} onCreateTeam={() => setScreen("team-create")} onManageTeam={(id) => { setTeamMembers([]); setTeamMembersWorkspaceId(null); setTeamInvitations([]); setCurrentWorkspaceId(id); setManagedTeamWorkspaceId(id); void loadTeamMembers(id).catch((error) => console.error("Team member load failed:", error)); setScreen("team-manage") }} />
-  if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} memberFilter={currentTeamWorkspace ? activityFilter : undefined} onMemberFilterChange={currentTeamWorkspace ? setActivityFilter : undefined} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onSave={saveGrowthPhoto} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
-  if (screen === "body-weight") return <main style={bodyWeightPageStyle}><div style={bodyWeightContentStyle}><BodyWeightPanel userId={user.id} teamAvailable={teamWorkspaces.length > 0} onBack={() => setScreen(chooserCaller)} onSavePhoto={saveGrowthPhoto} /></div></main>
+  if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} memberFilter={currentTeamWorkspace ? activityFilter : undefined} onMemberFilterChange={currentTeamWorkspace ? setActivityFilter : undefined} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
+  if (screen === "body-weight") return <main style={bodyWeightPageStyle}><div style={bodyWeightContentStyle}><BodyWeightPanel userId={user.id} onBack={() => setScreen(chooserCaller)} /></div></main>
+  if (screen === "photo-record") return <PhotoRecordScreen teamAvailable={Boolean(currentTeamWorkspace)} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen(chooserCaller)} onSave={async (draft) => { const saved = await saveGrowthPhoto(draft); if (saved) setScreen("growth"); return saved }} />
   if (screen === "settings") {
     return <><SettingsScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onHistory={openHistory} onMenuEditor={() => { setMenuListBack("settings"); setMenuListCanStart(false); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onWorkspaceManager={() => setScreen("workspace-manager")} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
       setAcceptingInvitationId(id)
