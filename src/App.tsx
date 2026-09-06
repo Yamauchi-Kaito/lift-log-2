@@ -2204,8 +2204,8 @@ export default function App() {
                 </button>
               </div>
               <button
-                onClick={() => setScreen("growth")}
-                aria-label="成長記録を開く"
+                onClick={openHistory}
+                aria-label="履歴を開く"
                 style={{
                   width: 38,
                   height: 38,
