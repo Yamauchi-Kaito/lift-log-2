@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import type { User } from "@supabase/supabase-js"
 import LoginScreen from "./LoginScreen"
 import { supabase } from "./lib/supabase"
@@ -355,6 +355,7 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeigh
             {/* Quick record */}
           <button
             onClick={onQuickRecord}
+            aria-label="クイック記録"
             style={{
               width: "100%",
               background: "none",
@@ -417,30 +418,13 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeigh
               >
                 1種目だけすぐに記録する
               </p>
-              <div style={{ display: "flex", gap: 8 }}>
-                {["腕立て 30回", "スクワット 20回"].map((tag) => (
-                  <span
-                    key={tag}
-                    style={{
-                      fontSize: 11,
-                      color: "#666",
-                      backgroundColor: "#1e1e1e",
-                      border: "1px solid #282828",
-                      borderRadius: 6,
-                      padding: "3px 8px",
-                      fontFamily: "Inter",
-                    }}
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
             </div>
           </button>
 
           {/* Full session */}
           <button
             onClick={onStartWorkout}
+            aria-label="トレーニングを開始"
             style={{
               width: "100%",
               background: "none",
@@ -499,42 +483,10 @@ function BottomSheet({ open, onClose, onStartWorkout, onQuickRecord, onBodyWeigh
                   color: "#888",
                   fontFamily: "Inter",
                   lineHeight: 1.5,
-                  marginBottom: 10,
                 }}
               >
-                複数種目・複数セットをまとめて記録する
+                保存したメニューを選択して開始する
               </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                {[
-                  { name: "ベンチプレス", detail: "80kg × 8回 / 7回 / 6回" },
-                  { name: "スクワット", detail: "100kg × 5回 × 3セット" },
-                ].map((ex) => (
-                  <div
-                    key={ex.name}
-                    style={{ display: "flex", gap: 8, alignItems: "baseline" }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: "#666",
-                        fontFamily: "Inter",
-                        minWidth: 80,
-                      }}
-                    >
-                      {ex.name}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: "#555",
-                        fontFamily: "Inter",
-                      }}
-                    >
-                      {ex.detail}
-                    </span>
-                  </div>
-                ))}
-              </div>
             </div>
           </button>
 
@@ -568,7 +520,7 @@ export default function App() {
   const [displayNameSaving, setDisplayNameSaving] = useState(false)
   const [screen, setScreen] = useState<"home" | "workout" | "quick-record" | "history" | "menu-list" | "menu-editor" | "exercise-manager" | "team-create" | "team-member" | "team-manage" | "workspace-manager" | "growth" | "body-weight" | "settings">("home")
   const [chooserCaller, setChooserCaller] = useState<typeof screen>("home")
-  const [activeTab, setActiveTab] = useState<Tab>("home")
+  const activeTab: Tab = screen === "history" ? "history" : "home"
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null)
   const [managedTeamWorkspaceId, setManagedTeamWorkspaceId] = useState<string | null>(null)
   const [workspaces, setWorkspaces] = useState(INITIAL_WORKSPACES)
@@ -578,9 +530,7 @@ export default function App() {
   const [wsMenuOpen, setWsMenuOpen] = useState(false)
   const [restEnabled, setRestEnabled] = useState(true)
   const [restSeconds, setRestSeconds] = useState(90)
-  const [startPressed, setStartPressed] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [menuPressedOpen, setMenuPressedOpen] = useState(false)
   const [menus, setMenus] = useState<TrainingMenu[]>([])
   const [menuLoading, setMenuLoading] = useState(false)
   const [menuSaving, setMenuSaving] = useState(false)
@@ -597,6 +547,7 @@ export default function App() {
   const [editingMenu, setEditingMenu] = useState<TrainingMenu | undefined>()
   const [workoutMenu, setWorkoutMenu] = useState<TrainingMenu | undefined>()
   const [menuListBack, setMenuListBack] = useState<"home" | "settings">("settings")
+  const [menuListCanStart, setMenuListCanStart] = useState(false)
   const [selectedMember, setSelectedMember] = useState<TeamMember | undefined>()
   const [selectedTeamId, setSelectedTeamId] = useState<string | undefined>()
   const [activityFilter, setActivityFilter] = useState<string[]>([])
@@ -621,6 +572,17 @@ export default function App() {
   const authenticatedUserIdRef = useRef<string | null>(null)
   const authEventVersionRef = useRef(0)
   const onboardingInitializedUserIdRef = useRef<string | null>(null)
+  const previousWorkoutSets = useMemo<Record<string, { weight: number | null; reps: number }[]>>(() => {
+    const byExerciseName = new Map<string, { weight: number | null; reps: number }[]>()
+    for (const record of historyRecords) {
+      for (const exercise of record.normal?.exercises ?? []) {
+        if (!byExerciseName.has(exercise.name)) {
+          byExerciseName.set(exercise.name, exercise.sets.map((set) => ({ weight: set.weightKg, reps: set.reps })))
+        }
+      }
+    }
+    return Object.fromEntries(byExerciseName)
+  }, [historyRecords])
 
   const resetUserScopedState = useCallback(() => {
     onboardingInitializedUserIdRef.current = null
@@ -630,7 +592,6 @@ export default function App() {
     setDisplayName("")
     setDisplayNameSaving(false)
     setScreen("home")
-    setActiveTab("home")
     setCurrentWorkspaceId(null)
     setManagedTeamWorkspaceId(null)
     setWorkspaces([])
@@ -639,9 +600,7 @@ export default function App() {
     setWsMenuOpen(false)
     setRestEnabled(true)
     setRestSeconds(90)
-    setStartPressed(false)
     setSheetOpen(false)
-    setMenuPressedOpen(false)
     setMenus([])
     setMenuLoading(false)
     setMenuSaving(false)
@@ -658,6 +617,7 @@ export default function App() {
     setEditingMenu(undefined)
     setWorkoutMenu(undefined)
     setMenuListBack("settings")
+    setMenuListCanStart(false)
     setSelectedMember(undefined)
     setSelectedTeamId(undefined)
     setActivityFilter([])
@@ -1709,7 +1669,6 @@ export default function App() {
       setWorkoutSaveError("保存しましたが、履歴を読み込めませんでした。履歴画面で再試行してください。")
       return false
     }
-    setActiveTab("history")
     setScreen("history")
     return true
   }
@@ -1969,25 +1928,32 @@ export default function App() {
   const teamWorkspaces = workspaces.filter((workspace): workspace is TeamWorkspace => workspace.type === "チーム")
   const openMember = (member: TeamMember) => { setSelectedMember(member); setSelectedTeamId(currentTeamWorkspace?.id); setScreen("team-member") }
   const openRecordChooser = () => { setChooserCaller(screen); setSheetOpen(true) }
+  const startWorkout = (menu: TrainingMenu) => {
+    setWorkoutMenu(menu)
+    setScreen("workout")
+  }
   const recordChooser = <BottomSheet
     open={sheetOpen}
     onClose={() => setSheetOpen(false)}
-    onStartWorkout={() => { setSheetOpen(false); setScreen("workout") }}
+    onStartWorkout={() => { setSheetOpen(false); setMenuListBack(chooserCaller === "settings" ? "settings" : "home"); setMenuListCanStart(true); setScreen("menu-list") }}
     onQuickRecord={() => { setSheetOpen(false); setScreen("quick-record") }}
     onBodyWeight={() => { setSheetOpen(false); setScreen("body-weight") }}
    />
 
   if (screen === "workout") {
-    return <WorkoutScreen onBack={() => setScreen("home")} menu={workoutMenu} registeredExercises={registeredExercises} saving={workoutSaving} error={workoutSaveError} restEnabled={restEnabled} restDuration={restSeconds} onSave={saveWorkoutSession} />
+    if (!workoutMenu) {
+      return <MenuListScreen menus={menus} loading={menuLoading} error={menuError} onRetry={() => void loadMenus()} onBack={() => setScreen("home")} onCreate={() => { setMenuError(null); setEditingMenu(undefined); setScreen("menu-editor") }} onEdit={(menu) => { setMenuError(null); setEditingMenu(menu); setScreen("menu-editor") }} canStart onStart={startWorkout} />
+    }
+    return <WorkoutScreen onBack={() => setScreen("home")} menu={workoutMenu} previousSetsByExerciseName={previousWorkoutSets} registeredExercises={registeredExercises} saving={workoutSaving} error={workoutSaveError} restEnabled={restEnabled} restDuration={restSeconds} onSave={saveWorkoutSession} />
   }
   if (screen === "quick-record") {
     return <QuickRecordScreen onBack={() => setScreen("home")} teams={teamWorkspaces} exercises={registeredExercises} onLoadPreviousSet={loadPreviousSet} onSaveRecord={saveQuickRecord} />
   }
   if (screen === "history") {
-    return <><HistoryScreen onHome={() => { setActiveTab("home"); setScreen("home") }} onQuick={openRecordChooser} onSettings={() => setScreen("settings")} records={historyRecords} loading={historyLoading} error={historyError} onRetry={() => void loadHistory()} onDelete={deleteHistoryRecord} onUpdateQuick={updateQuickHistoryRecord} onGrowth={() => setScreen("growth")} userId={user.id} />{recordChooser}</>
+    return <><HistoryScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onSettings={() => setScreen("settings")} records={historyRecords} loading={historyLoading} error={historyError} onRetry={() => void loadHistory()} onDelete={deleteHistoryRecord} onUpdateQuick={updateQuickHistoryRecord} onGrowth={() => setScreen("growth")} userId={user.id} />{recordChooser}</>
   }
   if (screen === "menu-list") {
-    return <MenuListScreen menus={menus} loading={menuLoading} error={menuError} onRetry={() => void loadMenus()} onBack={() => setScreen(menuListBack)} onCreate={() => { setMenuError(null); setEditingMenu(undefined); setScreen("menu-editor") }} onEdit={(menu) => { setMenuError(null); setEditingMenu(menu); setScreen("menu-editor") }} onStart={(menu) => { setWorkoutMenu(menu); setScreen("workout") }} />
+    return <MenuListScreen menus={menus} loading={menuLoading} error={menuError} onRetry={() => void loadMenus()} onBack={() => setScreen(menuListBack)} onCreate={() => { setMenuError(null); setEditingMenu(undefined); setScreen("menu-editor") }} onEdit={(menu) => { setMenuError(null); setEditingMenu(menu); setScreen("menu-editor") }} canStart={menuListCanStart} onStart={startWorkout} />
   }
   if (screen === "menu-editor") {
     return <MenuEditorScreen menu={editingMenu} registeredExercises={registeredExercises} saving={menuSaving} error={menuError} onBack={() => { setMenuError(null); setScreen("menu-list") }} onSave={saveMenu} onDelete={deleteMenu} />
@@ -2141,7 +2107,7 @@ export default function App() {
   if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} memberFilter={currentTeamWorkspace ? activityFilter : undefined} onMemberFilterChange={currentTeamWorkspace ? setActivityFilter : undefined} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onSave={saveGrowthPhoto} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
   if (screen === "body-weight") return <main style={bodyWeightPageStyle}><div style={bodyWeightContentStyle}><BodyWeightPanel userId={user.id} onBack={() => setScreen(chooserCaller)} /></div></main>
   if (screen === "settings") {
-    return <><SettingsScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onWorkspaceManager={() => setScreen("workspace-manager")} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
+    return <><SettingsScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onHistory={() => setScreen("history")} onMenuEditor={() => { setMenuListBack("settings"); setMenuListCanStart(false); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onWorkspaceManager={() => setScreen("workspace-manager")} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
       setAcceptingInvitationId(id)
       setIncomingInvitationError(null)
       const { error } = await supabase.rpc("accept_team_invitation", { invitation_id: id })
@@ -2435,55 +2401,6 @@ export default function App() {
             </div>
           </div>
 
-
-          {/* ─── Start button ─── */}
-          <div style={{ padding: "0 24px 28px" }}>
-            <button
-              onClick={() => { setMenuListBack("home"); setScreen("menu-list") }}
-              onPointerDown={() => setStartPressed(true)}
-              onPointerUp={() => setStartPressed(false)}
-              onPointerLeave={() => setStartPressed(false)}
-              style={{
-                width: "100%",
-                height: 72,
-                backgroundColor: startPressed ? "#9fcc00" : "#c8ff00",
-                border: "none",
-                borderRadius: 18,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 12,
-                transform: startPressed ? "scale(0.98)" : "scale(1)",
-                transition: "transform 0.1s, background-color 0.1s",
-                boxShadow: startPressed
-                  ? "none"
-                  : "0 0 32px rgba(200, 255, 0, 0.18)",
-              }}
-            >
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="#0d0d0d"
-                stroke="none"
-              >
-                <path d="M8 5.14v14l11-7-11-7z" />
-              </svg>
-              <span
-                style={{
-                  fontFamily: "Outfit",
-                  fontSize: 18,
-                  fontWeight: 700,
-                  color: "#0d0d0d",
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                トレーニングを開始
-              </span>
-            </button>
-          </div>
-
           {/* ─── Previous session ─── */}
           <div style={{ padding: "0 24px 28px" }}>
             <p
@@ -2572,48 +2489,6 @@ export default function App() {
                 </div>
               ))}
               {!previousRows.length && <p style={{ padding: "16px 20px", color: "#777", fontSize: 13 }}>トレーニングを記録するとここに表示されます</p>}
-              {/* Secondary action */}
-              <button
-                onClick={() => { if (menus[0]) { setWorkoutMenu(menus[0]); setScreen("workout") } else { setMenuListBack("home"); setScreen("menu-list") } }}
-                onPointerDown={() => setMenuPressedOpen(true)}
-                onPointerUp={() => setMenuPressedOpen(false)}
-                onPointerLeave={() => setMenuPressedOpen(false)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  width: "100%",
-                  padding: "14px 20px",
-                  background: menuPressedOpen ? "#1e1e1e" : "none",
-                  border: "none",
-                  cursor: "pointer",
-                  transition: "background-color 0.1s",
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#888"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M8 5.14v14l11-7-11-7z" />
-                </svg>
-                <span
-                  style={{
-                    fontFamily: "Inter",
-                    fontSize: 13,
-                    color: "#888",
-                    fontWeight: 500,
-                  }}
-                >
-                  このメニューで開始
-                </span>
-              </button>
             </div>
           </div>
 
@@ -2656,7 +2531,7 @@ export default function App() {
               <MiniCalendar activities={currentMonthActivities} filter={isTeamWorkspace ? activityFilter : undefined} onDaySelect={isTeamWorkspace ? setSelectedActivityDay : undefined} />
             </div>
           </div>
-          {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>最近の活動</p><button onClick={() => { setActiveTab("history"); setScreen("history") }} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>もっと見る</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredRecentActivities.slice(0, 3).map((activity, index) => activity.kind === "photo" ? <button key={activity.id} onClick={() => setScreen("growth")} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "10px 16px", border: "none", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><img src={activity.photo.imageUrl} alt="" style={{ width: 38, height: 48, borderRadius: 5, objectFit: "cover", background: "#202020" }} /><span style={{ flex: 1 }}><strong style={{ display: "block", fontFamily: "Outfit", fontSize: 14 }}>{activity.member}</strong><small style={{ display: "block", marginTop: 4, color: "#aaa", fontSize: 12 }}>成長記録を共有 · {activity.when}</small></span></button> : <div key={activity.id} style={{ padding: "14px 16px", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}><button onClick={() => openMember(teamMembers.find((member) => member.id === activity.memberId)!)} style={{ padding: 0, border: "none", background: "transparent", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{activity.member}</button><span style={{ color: "#777", fontFamily: "Inter", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>{activity.when}</span></p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{activity.exercise} · {activity.weight ? `${activity.weight}kg × ` : ""}{activity.reps}回</p></div>)}</div></div>}
+          {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>最近の活動</p><button onClick={() => setScreen("history")} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>もっと見る</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredRecentActivities.slice(0, 3).map((activity, index) => activity.kind === "photo" ? <button key={activity.id} onClick={() => setScreen("growth")} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "10px 16px", border: "none", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><img src={activity.photo.imageUrl} alt="" style={{ width: 38, height: 48, borderRadius: 5, objectFit: "cover", background: "#202020" }} /><span style={{ flex: 1 }}><strong style={{ display: "block", fontFamily: "Outfit", fontSize: 14 }}>{activity.member}</strong><small style={{ display: "block", marginTop: 4, color: "#aaa", fontSize: 12 }}>成長記録を共有 · {activity.when}</small></span></button> : <div key={activity.id} style={{ padding: "14px 16px", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}><button onClick={() => openMember(teamMembers.find((member) => member.id === activity.memberId)!)} style={{ padding: 0, border: "none", background: "transparent", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{activity.member}</button><span style={{ color: "#777", fontFamily: "Inter", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>{activity.when}</span></p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{activity.exercise} · {activity.weight ? `${activity.weight}kg × ` : ""}{activity.reps}回</p></div>)}</div></div>}
 
           {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500, marginBottom: 14 }}>メンバー</p><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{teamMembers.map((member, index) => <button key={member.id} onClick={() => openMember(member)} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "13px 16px", border: "none", borderBottom: index < teamMembers.length - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><i style={{ width: 7, height: 7, borderRadius: "50%", background: "#c8ff00" }} /><span style={{ flex: 1, fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{member.name}</span><span style={{ color: "#777", fontSize: 12 }}>今週 {member.weeklyCount}回</span><span style={{ color: "#666", fontSize: 18 }}>›</span></button>)}</div></div>}
           {selectedActivityDay && <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "rgba(0,0,0,.7)" }}><section style={{ width: "100%", maxWidth: 360, padding: 20, border: "1px solid #333", borderRadius: 16, background: "#171717" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h2 style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 700 }}>{currentMonthLabel}{selectedActivityDay}日</h2><button onClick={() => setSelectedActivityDay(null)} style={{ border: "none", background: "transparent", color: "#aaa", fontSize: 20, cursor: "pointer" }}>×</button></div>{filteredActivities.filter((record) => record.day === selectedActivityDay).map((record) => <div key={record.id} style={{ padding: "12px 0", borderTop: "1px solid #282828" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{record.member}</p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{record.exercise} · {record.weight ? `${record.weight}kg × ` : ""}{record.reps}回</p></div>)}</section></div>}
@@ -2681,7 +2556,8 @@ export default function App() {
         >
           {/* ホーム */}
           <button
-            onClick={() => setActiveTab("home")}
+            onClick={() => setScreen("home")}
+            aria-current={activeTab === "home" ? "page" : undefined}
             style={{
               flex: 1,
               display: "flex",
@@ -2777,7 +2653,8 @@ export default function App() {
 
           {/* 履歴 */}
           <button
-            onClick={() => { setActiveTab("history"); setScreen("history") }}
+            onClick={() => setScreen("history")}
+            aria-current={activeTab === "history" ? "page" : undefined}
             style={{
               flex: 1,
               display: "flex",

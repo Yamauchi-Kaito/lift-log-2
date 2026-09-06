@@ -1,6 +1,6 @@
 import type { TrainingMenu } from "./MenuEditorScreen"
 
-export default function MenuListScreen({ menus, loading, error, onRetry, onBack, onCreate, onEdit, onStart }: { menus: TrainingMenu[]; loading: boolean; error: string | null; onRetry: () => void; onBack: () => void; onCreate: () => void; onEdit: (menu: TrainingMenu) => void; onStart: (menu: TrainingMenu) => void }) {
+export default function MenuListScreen({ menus, loading, error, onRetry, onBack, onCreate, onEdit, canStart, onStart }: { menus: TrainingMenu[]; loading: boolean; error: string | null; onRetry: () => void; onBack: () => void; onCreate: () => void; onEdit: (menu: TrainingMenu) => void; canStart: boolean; onStart: (menu: TrainingMenu) => void }) {
   return <main style={pageStyle}><div style={contentStyle}>
     <header style={headerStyle}><button onClick={onBack} style={backStyle}>‹</button><div><p style={eyebrowStyle}>WORKOUT MENU</p><h1 style={{ fontFamily: "Outfit", fontSize: 22, fontWeight: 700 }}>トレーニングメニュー</h1></div></header>
     <div style={{ padding: "22px 24px 36px", flex: 1, overflowY: "auto" }}>
@@ -8,8 +8,8 @@ export default function MenuListScreen({ menus, loading, error, onRetry, onBack,
       {error && <div role="alert" style={errorStyle}><p>{error}</p><button onClick={onRetry} style={retryStyle}>再試行</button></div>}
       {loading ? <p style={statusStyle}>読み込み中...</p> : menus.map((menu) => { const totalSets = menu.exercises.reduce((sum, exercise) => sum + exercise.sets, 0); return <section key={menu.id} style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}><div><h2 style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 700, marginBottom: 7 }}>{menu.name}</h2><p style={{ color: "#777", fontSize: 12 }}>{menu.exercises.length}種目 · 合計 {totalSets}セット</p></div><button onClick={() => onEdit(menu)} style={editStyle}>編集</button></div>
-        <div style={{ margin: "16px 0", borderTop: "1px solid #282828" }} />
-        <button onClick={() => onStart(menu)} style={startStyle}><span>▶</span> このメニューで開始</button>
+        {canStart && <><div style={{ margin: "16px 0", borderTop: "1px solid #282828" }} />
+        <button onClick={() => onStart(menu)} style={startStyle}><span>▶</span> このメニューで開始</button></>}
       </section> })}
       {!loading && menus.length === 0 && <p style={{ color: "#777", textAlign: "center", padding: "36px 0" }}>メニューがまだありません</p>}
       <button onClick={onCreate} disabled={loading} style={{ ...createStyle, opacity: loading ? .5 : 1 }}>＋ メニューを作成</button>

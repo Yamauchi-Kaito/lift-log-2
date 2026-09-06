@@ -30,53 +30,6 @@ const ADDABLE_EXERCISES = [
   { name: "懸垂", weight: 0, reps: 8 },
 ]
 
-// ─── Initial data (前回記録を初期値として使用) ──────────────
-
-const INITIAL_EXERCISES: WorkoutExercise[] = [
-  {
-    id: 1,
-    name: "ベンチプレス",
-    prevSets: [
-      { weight: 80, reps: 8 },
-      { weight: 80, reps: 7 },
-      { weight: 80, reps: 6 },
-    ],
-    sets: [
-      { id: 1, weight: 80, reps: 8, completed: false },
-      { id: 2, weight: 80, reps: 7, completed: false },
-      { id: 3, weight: 80, reps: 6, completed: false },
-    ],
-  },
-  {
-    id: 2,
-    name: "インクラインDB",
-    prevSets: [
-      { weight: 30, reps: 10 },
-      { weight: 30, reps: 10 },
-      { weight: 30, reps: 9 },
-    ],
-    sets: [
-      { id: 4, weight: 30, reps: 10, completed: false },
-      { id: 5, weight: 30, reps: 10, completed: false },
-      { id: 6, weight: 30, reps: 9, completed: false },
-    ],
-  },
-  {
-    id: 3,
-    name: "ケーブルフライ",
-    prevSets: [
-      { weight: 15, reps: 12 },
-      { weight: 15, reps: 12 },
-      { weight: 15, reps: 12 },
-    ],
-    sets: [
-      { id: 7, weight: 15, reps: 12, completed: false },
-      { id: 8, weight: 15, reps: 12, completed: false },
-      { id: 9, weight: 15, reps: 12, completed: false },
-    ],
-  },
-]
-
 // ─── Helpers ─────────────────────────────────────────────
 
 function formatTime(seconds: number) {
@@ -664,18 +617,17 @@ function ExerciseSection({
 
 // ─── WorkoutScreen ───────────────────────────────────────
 
-function initialExercises(menu: TrainingMenu | undefined, registeredExercises: RegisteredExercise[]): WorkoutExercise[] {
-  if (!menu) return INITIAL_EXERCISES.map((exercise) => ({ ...exercise, exerciseId: registeredExercises.find((registered) => registered.name === exercise.name)?.id, kind: registeredExercises.find((registered) => registered.name === exercise.name)?.kind, prevSets: [...exercise.prevSets], sets: exercise.sets.map((set) => ({ ...set })) }))
+function initialExercises(menu: TrainingMenu, registeredExercises: RegisteredExercise[], previousSetsByExerciseName: Record<string, { weight: number | null; reps: number }[]>): WorkoutExercise[] {
   return menu.exercises.map((item, exerciseIndex) => {
-    const previous = INITIAL_EXERCISES.find((exercise) => exercise.name === item.name)?.prevSets ?? []
+    const previous = previousSetsByExerciseName[item.name] ?? []
     const registeredExercise = registeredExercises.find((exercise) => exercise.id === item.exerciseId)
     const kind = item.kind ?? registeredExercise?.kind
     return { id: exerciseIndex + 1, exerciseId: item.exerciseId, name: item.name, kind, prevSets: previous, sets: Array.from({ length: item.sets }, (_, setIndex) => ({ id: (exerciseIndex + 1) * 100 + setIndex, weight: kind === "自重" ? null : previous[setIndex]?.weight ?? null, reps: previous[setIndex]?.reps ?? 10, completed: false })) }
   })
 }
 
-export default function WorkoutScreen({ onBack, onSave, menu, registeredExercises, saving, error, restEnabled = true, restDuration = 90 }: { onBack: () => void; onSave: (data: WorkoutSaveData) => Promise<boolean>; menu?: TrainingMenu; registeredExercises: RegisteredExercise[]; saving: boolean; error: string | null; restEnabled?: boolean; restDuration?: number }) {
-  const initial = useRef(initialExercises(menu, registeredExercises))
+export default function WorkoutScreen({ onBack, onSave, menu, previousSetsByExerciseName, registeredExercises, saving, error, restEnabled = true, restDuration = 90 }: { onBack: () => void; onSave: (data: WorkoutSaveData) => Promise<boolean>; menu: TrainingMenu; previousSetsByExerciseName: Record<string, { weight: number | null; reps: number }[]>; registeredExercises: RegisteredExercise[]; saving: boolean; error: string | null; restEnabled?: boolean; restDuration?: number }) {
+  const initial = useRef(initialExercises(menu, registeredExercises, previousSetsByExerciseName))
   const startedAt = useRef(new Date().toISOString())
   const [exercises, setExercises] = useState<WorkoutExercise[]>(initial.current)
   const [elapsed, setElapsed] = useState(0)
@@ -870,6 +822,7 @@ export default function WorkoutScreen({ onBack, onSave, menu, registeredExercise
           {/* Back */}
           <button
             onClick={onBack}
+            aria-label="戻る"
             style={{
               width: 36,
               height: 36,
