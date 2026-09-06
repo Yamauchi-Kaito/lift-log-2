@@ -1607,8 +1607,7 @@ export default function App() {
       setWorkoutSaveError("保存しましたが、履歴を読み込めませんでした。履歴画面で再試行してください。")
       return false
     }
-    setHistorySelectedDateKey(null)
-    setScreen("history")
+    openHistory()
     return true
   }
 
@@ -1867,6 +1866,15 @@ export default function App() {
   const teamWorkspaces = workspaces.filter((workspace): workspace is TeamWorkspace => workspace.type === "チーム")
   const openMember = (member: TeamMember) => { setSelectedMember(member); setSelectedTeamId(currentTeamWorkspace?.id); setScreen("team-member") }
   const openRecordChooser = () => { setChooserCaller(screen); setSheetOpen(true) }
+  // Keep every non-date history entry on the same screen and clear stale selection.
+  const openHistory = () => {
+    setHistorySelectedDateKey(null)
+    setScreen("history")
+  }
+  const openHistoryOnDate = (dateKey: string) => {
+    setHistorySelectedDateKey(dateKey)
+    setScreen("history")
+  }
   const startWorkout = (menu: TrainingMenu) => {
     setWorkoutMenu(menu)
     setScreen("workout")
@@ -2046,7 +2054,7 @@ export default function App() {
   if (screen === "growth") return <GrowthScreen teamId={currentTeamWorkspace?.id} currentUserId={user.id} members={teamMembers.map((member) => ({ id: member.id, name: member.name, color: "#c8ff00" }))} photos={growthPhotos} memberFilter={currentTeamWorkspace ? activityFilter : undefined} onMemberFilterChange={currentTeamWorkspace ? setActivityFilter : undefined} loading={growthPhotoLoading} saving={growthPhotoSaving} error={growthPhotoError} onBack={() => setScreen("home")} onSave={saveGrowthPhoto} onUpdate={updateGrowthPhoto} onDelete={deleteGrowthPhoto} />
   if (screen === "body-weight") return <main style={bodyWeightPageStyle}><div style={bodyWeightContentStyle}><BodyWeightPanel userId={user.id} teamAvailable={teamWorkspaces.length > 0} onBack={() => setScreen(chooserCaller)} onSavePhoto={saveGrowthPhoto} /></div></main>
   if (screen === "settings") {
-    return <><SettingsScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onHistory={() => { setHistorySelectedDateKey(null); setScreen("history") }} onMenuEditor={() => { setMenuListBack("settings"); setMenuListCanStart(false); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onWorkspaceManager={() => setScreen("workspace-manager")} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
+    return <><SettingsScreen onHome={() => setScreen("home")} onQuick={openRecordChooser} onHistory={openHistory} onMenuEditor={() => { setMenuListBack("settings"); setMenuListCanStart(false); setScreen("menu-list") }} onExerciseManager={() => setScreen("exercise-manager")} onWorkspaceManager={() => setScreen("workspace-manager")} restEnabled={restEnabled} onRestEnabled={setRestEnabled} restSeconds={restSeconds} onRestSeconds={setRestSeconds} incomingInvitations={incomingInvitations} acceptingInvitationId={acceptingInvitationId} invitationError={incomingInvitationError} displayName={displayName} displayNameSaving={displayNameSaving} onSaveDisplayName={saveDisplayName} onAcceptInvitation={async (id) => {
       setAcceptingInvitationId(id)
       setIncomingInvitationError(null)
       const { error } = await supabase.rpc("accept_team_invitation", { invitation_id: id })
@@ -2096,10 +2104,6 @@ export default function App() {
   const currentMonthTrainingDayCount = isTeamWorkspace
     ? new Set(currentMonthActivities.map((activity) => activity.timestamp ? dateKeyFromDate(new Date(activity.timestamp)) : activity.day == null ? undefined : `${currentMonthPrefix}${String(activity.day).padStart(2, "0")}`).filter((key): key is string => key !== undefined && key.startsWith(currentMonthPrefix))).size
     : [...trainingDays].filter((key) => key.startsWith(currentMonthPrefix)).length
-  const openHistoryOnDate = (dateKey: string) => {
-    setHistorySelectedDateKey(dateKey)
-    setScreen("history")
-  }
   const currentWeekStart = new Date(currentDate)
   currentWeekStart.setHours(0, 0, 0, 0)
   currentWeekStart.setDate(currentDate.getDate() - ((currentDate.getDay() + 6) % 7))
@@ -2478,7 +2482,7 @@ export default function App() {
               <MiniCalendar activities={currentMonthActivities} filter={isTeamWorkspace ? activityFilter : undefined} onDaySelect={isTeamWorkspace ? (dateKey) => setSelectedActivityDay(Number(dateKey.slice(-2))) : openHistoryOnDate} disableUnmarked={isTeamWorkspace} />
             </div>
           </div>
-          {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>最近の活動</p><button onClick={() => { setHistorySelectedDateKey(null); setScreen("history") }} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>もっと見る</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredRecentActivities.slice(0, 3).map((activity, index) => activity.kind === "photo" ? <button key={activity.id} onClick={() => setScreen("growth")} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "10px 16px", border: "none", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><img src={activity.photo.imageUrl} alt="" style={{ width: 38, height: 48, borderRadius: 5, objectFit: "cover", background: "#202020" }} /><span style={{ flex: 1 }}><strong style={{ display: "block", fontFamily: "Outfit", fontSize: 14 }}>{activity.member}</strong><small style={{ display: "block", marginTop: 4, color: "#aaa", fontSize: 12 }}>成長記録を共有 · {activity.when}</small></span></button> : <div key={activity.id} style={{ padding: "14px 16px", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}><button onClick={() => openMember(teamMembers.find((member) => member.id === activity.memberId)!)} style={{ padding: 0, border: "none", background: "transparent", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{activity.member}</button><span style={{ color: "#777", fontFamily: "Inter", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>{activity.when}</span></p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{activity.exercise} · {activity.weight ? `${activity.weight}kg × ` : ""}{activity.reps}回</p></div>)}</div></div>}
+          {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500 }}>最近の活動</p><button onClick={openHistory} style={{ border: "none", background: "transparent", color: "#c8ff00", fontSize: 12, cursor: "pointer" }}>もっと見る</button></div><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{filteredRecentActivities.slice(0, 3).map((activity, index) => activity.kind === "photo" ? <button key={activity.id} onClick={() => setScreen("growth")} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "10px 16px", border: "none", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><img src={activity.photo.imageUrl} alt="" style={{ width: 38, height: 48, borderRadius: 5, objectFit: "cover", background: "#202020" }} /><span style={{ flex: 1 }}><strong style={{ display: "block", fontFamily: "Outfit", fontSize: 14 }}>{activity.member}</strong><small style={{ display: "block", marginTop: 4, color: "#aaa", fontSize: 12 }}>成長記録を共有 · {activity.when}</small></span></button> : <div key={activity.id} style={{ padding: "14px 16px", borderBottom: index < Math.min(filteredRecentActivities.length, 3) - 1 ? "1px solid #282828" : "none" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}><button onClick={() => openMember(teamMembers.find((member) => member.id === activity.memberId)!)} style={{ padding: 0, border: "none", background: "transparent", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{activity.member}</button><span style={{ color: "#777", fontFamily: "Inter", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>{activity.when}</span></p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{activity.exercise} · {activity.weight ? `${activity.weight}kg × ` : ""}{activity.reps}回</p></div>)}</div></div>}
 
           {isTeamWorkspace && <div style={{ padding: "0 24px 28px" }}><p style={{ fontSize: 11, color: "#777", letterSpacing: "0.1em", fontWeight: 500, marginBottom: 14 }}>メンバー</p><div style={{ background: "#171717", border: "1px solid #2a2a2a", borderRadius: 16, overflow: "hidden" }}>{teamMembers.map((member, index) => <button key={member.id} onClick={() => openMember(member)} style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: "13px 16px", border: "none", borderBottom: index < teamMembers.length - 1 ? "1px solid #282828" : "none", background: "transparent", color: "#f0f0f0", textAlign: "left", cursor: "pointer" }}><i style={{ width: 7, height: 7, borderRadius: "50%", background: "#c8ff00" }} /><span style={{ flex: 1, fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{member.name}</span><span style={{ color: "#777", fontSize: 12 }}>今週 {member.weeklyCount}回</span><span style={{ color: "#666", fontSize: 18 }}>›</span></button>)}</div></div>}
           {selectedActivityDay && <div style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "rgba(0,0,0,.7)" }}><section style={{ width: "100%", maxWidth: 360, padding: 20, border: "1px solid #333", borderRadius: 16, background: "#171717" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><h2 style={{ fontFamily: "Outfit", fontSize: 18, fontWeight: 700 }}>{currentMonthLabel}{selectedActivityDay}日</h2><button onClick={() => setSelectedActivityDay(null)} style={{ border: "none", background: "transparent", color: "#aaa", fontSize: 20, cursor: "pointer" }}>×</button></div>{filteredActivities.filter((record) => record.day === selectedActivityDay).map((record) => <div key={record.id} style={{ padding: "12px 0", borderTop: "1px solid #282828" }}><p style={{ fontFamily: "Outfit", fontSize: 14, fontWeight: 700 }}>{record.member}</p><p style={{ color: "#aaa", fontSize: 13, marginTop: 5 }}>{record.exercise} · {record.weight ? `${record.weight}kg × ` : ""}{record.reps}回</p></div>)}</section></div>}
@@ -2600,7 +2604,7 @@ export default function App() {
 
           {/* 履歴 */}
           <button
-            onClick={() => { setHistorySelectedDateKey(null); setScreen("history") }}
+            onClick={openHistory}
             aria-current={activeTab === "history" ? "page" : undefined}
             style={{
               flex: 1,
