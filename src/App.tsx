@@ -2219,26 +2219,29 @@ export default function App() {
                   </svg>
                 </button>
               </div>
-              <button
-                onClick={openHistory}
-                aria-label="履歴を開く"
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: "50%",
-                  backgroundColor: "#202020",
-                  border: "1px solid #2a2a2a",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontFamily: "Outfit",
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: "#888", cursor: "pointer",
-                }}
-              >
-                田
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button onClick={() => setScreen("growth")} style={{ border: "none", background: "transparent", padding: "8px 4px", color: "#c8ff00", fontFamily: "Inter", fontSize: 12, cursor: "pointer" }}>成長記録</button>
+                <button
+                  onClick={openHistory}
+                  aria-label="履歴を開く"
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: "50%",
+                    backgroundColor: "#202020",
+                    border: "1px solid #2a2a2a",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontFamily: "Outfit",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "#888", cursor: "pointer",
+                  }}
+                >
+                  田
+                </button>
+              </div>
             </div>
 
             {wsMenuOpen && (
@@ -2567,6 +2570,7 @@ export default function App() {
           {/* ＋ center button */}
           <button
             onClick={openRecordChooser}
+            aria-label="記録"
             style={{
               flex: 1,
               display: "flex",

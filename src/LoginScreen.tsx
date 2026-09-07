@@ -4,6 +4,27 @@ import { supabase } from "./lib/supabase"
 
 type AuthMode = "login" | "signup"
 
+function authErrorMessage(mode: AuthMode, message: string) {
+  const normalized = message.toLowerCase()
+
+  if (normalized.includes("invalid login credentials")) {
+    return "メールアドレスまたはパスワードが正しくありません。"
+  }
+  if (normalized.includes("user already registered")) {
+    return "このメールアドレスはすでに登録されています。ログインしてください。"
+  }
+  if (normalized.includes("password") && (normalized.includes("short") || normalized.includes("least"))) {
+    return "パスワードは6文字以上で入力してください。"
+  }
+  if (normalized.includes("email") && normalized.includes("invalid")) {
+    return "メールアドレスの形式を確認してください。"
+  }
+
+  return mode === "login"
+    ? "ログインできませんでした。通信状況を確認して、もう一度お試しください。"
+    : "アカウントを作成できませんでした。通信状況を確認して、もう一度お試しください。"
+}
+
 export default function LoginScreen() {
   const [mode, setMode] = useState<AuthMode>("login")
   const [email, setEmail] = useState("")
@@ -31,7 +52,7 @@ export default function LoginScreen() {
     setSubmitting(false)
 
     if (result.error) {
-      setErrorMessage(result.error.message)
+      setErrorMessage(authErrorMessage(mode, result.error.message))
       return
     }
 

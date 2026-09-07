@@ -29,6 +29,7 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onLoadPrev
   const [previousLoading, setPreviousLoading] = useState(false)
   const repsRef = useRef<HTMLInputElement>(null)
   const selectionRequest = useRef(0)
+  const manualEntryRequest = useRef(0)
   const canSave = exerciseId !== null && reps > 0 && (shareTo !== "team" || Boolean(team))
 
   useEffect(() => {
@@ -61,6 +62,7 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onLoadPrev
   async function selectExercise(selectedExercise: RegisteredExercise) {
     const requestId = selectionRequest.current + 1
     selectionRequest.current = requestId
+    manualEntryRequest.current = 0
     setExercise(selectedExercise.name)
     setExerciseId(selectedExercise.id)
     setWeight("")
@@ -72,8 +74,19 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onLoadPrev
     if (selectionRequest.current !== requestId) return
     setPreviousLoading(false)
     setPreviousRecord(previous)
+    if (manualEntryRequest.current === requestId) return
     setWeight(previous?.weight?.toString() ?? "")
     setReps(previous?.reps ?? 0)
+  }
+
+  function updateWeight(value: string) {
+    manualEntryRequest.current = selectionRequest.current
+    setWeight(value.replace(/[^0-9.]/g, ""))
+  }
+
+  function updateReps(value: number) {
+    manualEntryRequest.current = selectionRequest.current
+    setReps(value)
   }
 
   if (saved) {
@@ -114,16 +127,16 @@ export default function QuickRecordScreen({ onBack, teams, exercises, onLoadPrev
           <div style={{ height: 28 }} />
           <Label>重量 <span style={{ color: "#555", fontWeight: 400 }}>任意</span></Label>
           <div style={{ ...fieldStyle, padding: "0 16px" }}>
-            <input value={weight} onChange={(event) => setWeight(event.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="重量を入力" style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 18 }} />
+            <input value={weight} onChange={(event) => updateWeight(event.target.value)} inputMode="decimal" placeholder="重量を入力" style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 18 }} />
             <span style={{ color: "#777", fontFamily: "Outfit", fontSize: 14 }}>kg</span>
           </div>
 
           <div style={{ height: 28 }} />
           <Label>回数</Label>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 18, padding: "8px 0" }}>
-            <button onClick={() => setReps((value) => Math.max(0, value - 1))} style={stepperStyle}>−</button>
-            {editingReps ? <input ref={repsRef} value={reps} onChange={(event) => setReps(Math.max(0, Number(event.target.value) || 0))} onBlur={() => setEditingReps(false)} onKeyDown={(event) => { if (event.key === "Enter") setEditingReps(false) }} inputMode="numeric" style={{ width: 98, background: "#202020", border: "1px solid #c8ff00", borderRadius: 12, color: "#f0f0f0", outline: "none", fontFamily: "Outfit", fontSize: 34, fontWeight: 700, textAlign: "center", padding: "8px" }} /> : <button onClick={() => setEditingReps(true)} style={{ width: 98, background: "transparent", border: "none", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 38, fontWeight: 700, cursor: "pointer" }}>{reps}</button>}
-            <button onClick={() => setReps((value) => value + 1)} style={stepperStyle}>＋</button>
+            <button onClick={() => updateReps(Math.max(0, reps - 1))} style={stepperStyle}>−</button>
+            {editingReps ? <input ref={repsRef} value={reps} onChange={(event) => updateReps(Math.max(0, Number(event.target.value) || 0))} onBlur={() => setEditingReps(false)} onKeyDown={(event) => { if (event.key === "Enter") setEditingReps(false) }} inputMode="numeric" style={{ width: 98, background: "#202020", border: "1px solid #c8ff00", borderRadius: 12, color: "#f0f0f0", outline: "none", fontFamily: "Outfit", fontSize: 34, fontWeight: 700, textAlign: "center", padding: "8px" }} /> : <button onClick={() => setEditingReps(true)} style={{ width: 98, background: "transparent", border: "none", color: "#f0f0f0", fontFamily: "Outfit", fontSize: 38, fontWeight: 700, cursor: "pointer" }}>{reps}</button>}
+            <button onClick={() => updateReps(reps + 1)} style={stepperStyle}>＋</button>
           </div>
           <p style={{ textAlign: "center", color: "#666", fontSize: 11, marginTop: 6 }}>数字をタップして直接入力</p>
           {previousLoading && <p style={{ textAlign: "center", color: "#777", fontSize: 12, marginTop: 14 }}>前回記録を読み込み中...</p>}
